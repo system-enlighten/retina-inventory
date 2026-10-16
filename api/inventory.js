@@ -35,7 +35,24 @@ export default async function handler(req,res) {
       const [products,stock]=await Promise.all([readTab(sheets,spreadsheetId,'Products'),readTab(sheets,spreadsheetId,'Stock')]);
       return res.json({products,stock});
     }
-    return res.status(400).json({error:'Unsupported operation. Stock updates are intentionally disabled until atomic transaction backend is configured.'});
+    if(action==='move') {
+      const type=String(req.body.type||'').toUpperCase();
+      const role=String(employee.Role||employee.role||'Employee').toLowerCase();
+      if(type==='IN'&&!['admin','purchase','store'].includes(role)) return res.status(403).json({error:'You cannot check in'});
+      if(type==='OUT'&&!['admin','store'].includes(role)) return res.status(403).json({error:'You cannot check out'});
+      if(!['IN','OUT'].includes(type)) return res.status(400).json({error:'Invalid movement type'});
+      const items=req.body.items;
+      if(!Array.isArray(items)||!items.length||items.length>100) return res.status(400).json({error:'Invalid cart'});
+      const url=process.env.RETINA_SCRIPT_URL,secret=process.env.RETINA_SHARED_SECRET;
+      if(!url||!secret) return res.status(503).json({error:'Stock writer not configured. Ask administrator to configure Apps Script.'});
+      const payload={secret,action:'move',type,email,reference:req.body.reference,id:req.body.id,items};
+      const upstream=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),redirect:'follow'});
+      const body=await upstream.text();
+      let result;try{result=JSON.parse(body)}catch{throw Error('Apps Script returned non-JSON response. Check web app deployment permissions.')}
+      if(!result.ok) return res.status(400).json({error:result.error||'Stock update failed'});
+      return res.json(result);
+    }
+    return res.status(400).json({error:'Unsupported operation'});
   } catch(err) {
     console.error('Inventory API error',err);
     return res.status(500).json({error:'Authentication or Google Sheets connection failed. Check server logs and configuration.'});
