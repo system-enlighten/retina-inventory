@@ -1,7 +1,28 @@
+import crypto from 'node:crypto';
 import { OAuth2Client, JWT } from 'google-auth-library';
 import { google } from 'googleapis';
 
 const oauth = new OAuth2Client();
+const sessionKey = () => process.env.RETINA_SESSION_SECRET || process.env.RETINA_SHARED_SECRET;
+const cookieName = 'retina_session';
+function signSession(email) {
+  const data = Buffer.from(JSON.stringify({email, exp:Date.now()+14*86400000})).toString('base64url');
+  const sig = crypto.createHmac('sha256',sessionKey()).update(data).digest('base64url');
+  return `${data}.${sig}`;
+}
+function verifySession(req) {
+  if (!sessionKey()) return null;
+  const raw = (req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(cookieName+'='))?.slice(cookieName.length+1);
+  if (!raw) return null;
+  const [data,sig] = raw.split('.');
+  if (!data || !sig) return null;
+  const expected=crypto.createHmac('sha256',sessionKey()).update(data).digest('base64url');
+  if (sig.length!==expected.length || !crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected))) return null;
+  try {const payload=JSON.parse(Buffer.from(data,'base64url').toString());return payload.exp>Date.now() ? payload.email : null;} catch{return null;}
+}
+function setCookie(res,value,maxAge) {
+  res.setHeader('Set-Cookie',`${cookieName}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`);
+}
 const tabs = { Products: 'Products', Stock: 'Stock', Users: 'Users', Purchases: 'Purchases', Transactions: 'Transactions' };
 function rows(values=[]) {
   const [header=[], ...data] = values;
@@ -15,13 +36,21 @@ export default async function handler(req,res) {
   res.setHeader('Cache-Control','no-store');
   if(req.method!=='POST') return res.status(405).json({error:'POST required'});
   try {
-    const token = req.headers.authorization?.replace(/^Bearer\s+/i,'');
-    if(!token || !process.env.GOOGLE_CLIENT_ID) return res.status(401).json({error:'Sign in required'});
-    const ticket=await oauth.verifyIdToken({idToken:token,audience:process.env.GOOGLE_CLIENT_ID});
-    const profile=ticket.getPayload();
-    if(!profile?.email_verified || !profile.email?.toLowerCase().endsWith('@gmail.com'))
-      return res.status(403).json({error:'Verified Gmail account required'});
-    const email=profile.email.toLowerCase();
+    const action=req.body?.action;
+    if(action==='logout') {setCookie(res,'',0);return res.json({ok:true});}
+    let email=verifySession(req);
+    let profile=null;
+    let freshlyAuthenticated=false;
+    if(!email) {
+      const token=req.headers.authorization?.replace(/^Bearer\s+/i,'').trim();
+      if(!token || !process.env.GOOGLE_CLIENT_ID) return res.status(401).json({error:'Sign in required'});
+      const ticket=await oauth.verifyIdToken({idToken:token,audience:process.env.GOOGLE_CLIENT_ID});
+      profile=ticket.getPayload();
+      if(!profile?.email_verified || !profile.email?.toLowerCase().endsWith('@gmail.com'))
+        return res.status(403).json({error:'Verified Gmail account required'});
+      email=profile.email.toLowerCase();
+      freshlyAuthenticated=true;
+    }
     const auth=new JWT({email:process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,key:process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g,'\n'),scopes:['https://www.googleapis.com/auth/spreadsheets.readonly']});
     const sheets=google.sheets({version:'v4',auth});
     const spreadsheetId=process.env.GOOGLE_SHEET_ID;
@@ -29,8 +58,8 @@ export default async function handler(req,res) {
     const users=await readTab(sheets,spreadsheetId,'Users');
     const employee=users.find(u=>String(u['Employee Email']||u.Email||u.email||'').toLowerCase()===email && String(u.Status||u.status||'').toLowerCase()==='active');
     if(!employee) return res.status(403).json({error:'This Gmail account is not approved in Users sheet'});
-    const action=req.body?.action;
-    if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile.name||email});
+    if(freshlyAuthenticated && sessionKey()) setCookie(res,signSession(email),14*86400);
+    if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile?.name||email});
     if(action==='catalog') {
       const [products,stock]=await Promise.all([readTab(sheets,spreadsheetId,'Products'),readTab(sheets,spreadsheetId,'Stock')]);
       return res.json({products,stock});
