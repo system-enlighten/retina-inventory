@@ -653,11 +653,20 @@ export default function RetinaInventory({cloud}) {
   const [cloudStock,setCloudStock] = useState({});
   const [cloudSkus,setCloudSkus] = useState(new Set());
   const [productImages,setProductImages] = useState({});
+  // Google Drive /file/d/ID/view links are HTML pages, not image files.
+  // Convert them to image-serving thumbnail endpoints before using <img>.
+  const displayImageUrl = (raw) => {
+    const url = String(raw || '').trim();
+    if (!/^https?:\/\//i.test(url)) return '';
+    const match = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)
+      || url.match(/drive\.google\.com\/(?:thumbnail|uc)\?[^#]*[?&]id=([a-zA-Z0-9_-]+)/);
+    return match ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w800` : url;
+  };
   const load = async () => {
     try {
       const d=await cloud.api('catalog');
       setCloudSkus(new Set(d.products.map(p=>String(p.SKU||'').trim())));
-      setProductImages(Object.fromEntries(d.products.map(p => [String(p.SKU||'').trim().toUpperCase(), String(p['Image URL']||'').trim()]).filter(([sku,url]) => sku && /^https?:\/\//i.test(url))));
+      setProductImages(Object.fromEntries(d.products.map(p => [String(p.SKU||'').trim().toUpperCase(), displayImageUrl(p['Image URL'])]).filter(([sku,url]) => sku && /^https?:\/\//i.test(url))));
       setCloudStock(Object.fromEntries(d.stock.map(x=>[String(x.SKU||'').trim(),Number(x.Quantity||0)])));
       setError('');
     }catch(e){setError(e.message)}
