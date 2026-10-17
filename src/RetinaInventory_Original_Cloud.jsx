@@ -172,7 +172,14 @@ function ProductCard({ item, stockOf, mode, cart, onSet, comboMap, imageFor }) {
   return (
     <article className={`card ${empty ? "is-empty" : ""}`}>
       <div className="thumb">
-        {imageUrl && failedImageUrl !== imageUrl ? <img key={imageUrl} src={imageUrl} alt={item.title} loading="lazy" onError={() => setFailedImageUrl(imageUrl)} style={{width:"100%",height:"100%",objectFit:"contain",padding:8,boxSizing:"border-box"}} /> : <CatIcon cat={item.cat} />}
+        {imageUrl && failedImageUrl !== imageUrl ? <img key={imageUrl} src={imageUrl} alt={item.title} loading="lazy" onError={() => setFailedImageUrl(imageUrl)} style={{
+  display: "block",
+  width: "85%",
+  height: "85%",
+  objectFit: "contain",
+  objectPosition: "center",
+  margin: "auto"
+}}/> : <CatIcon cat={item.cat} />}
         <span className={`stock ${stock <= 0 ? "zero" : stock <= 5 ? "low" : ""}`}>{stock <= 0 ? "Out of stock" : `${fmtQty(stock)} in stock`}</span>
       </div>
       <div className="meta">
@@ -967,7 +974,17 @@ const CSS = `
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(188px,1fr));gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:8px}
 .card.is-empty{opacity:.75}
-.thumb{position:relative;aspect-ratio:1/0.7;border-radius:11px;background:#F4EFE2;display:grid;place-items:center;color:#9A7A1E}
+.thumb {
+  position: relative;
+  aspect-ratio: 1 / 0.7;
+  border-radius: 11px;
+  background: #F4EFE2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #9A7A1E;
+}
 .stock{position:absolute;left:6px;bottom:6px;background:#fff;border-radius:7px;padding:3px 7px;font-size:11px;font-weight:700;color:var(--in)}
 .stock.low{color:#B26A00}.stock.zero{color:var(--out)}
 .meta h3{font-size:14px;line-height:1.25;margin:0;font-weight:700}
