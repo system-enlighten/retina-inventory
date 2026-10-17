@@ -60,6 +60,13 @@ function applyMovement_(input) {
     var role=String(employee[roleCol]||'Employee').toLowerCase();
     if(type==='IN' && !['admin','purchase','store'].includes(role)) throw Error('Not permitted to check in');
     if(type==='OUT' && !['admin','store'].includes(role)) throw Error('Not permitted to check out');
+    var productsSheet=ss.getSheetByName('Products');
+    if(!productsSheet)throw Error('Products tab missing');
+    var productRows=productsSheet.getDataRange().getValues();
+    var productHeaders=productRows.shift().map(String);
+    var productSkuCol=findCol_(productHeaders,'SKU');
+    var validSkus={};
+    productRows.forEach(function(row){var sku=String(row[productSkuCol]||'').trim();if(sku)validSkus[sku]=true;});
     var stock=ss.getSheetByName('Stock');if(!stock) throw Error('Stock tab missing');
     var tx=ensureTransactions_(ss),th=headers_(tx);
     var idCol=findCol_(th,'Transaction ID');
@@ -76,6 +83,7 @@ function applyMovement_(input) {
     items.forEach(function(item){
       var sku=String(item.sku||'').trim(),qty=Number(item.quantity);
       if(!sku||!Number.isSafeInteger(qty)||qty<=0||qty>1000000||seen[sku]) throw Error('Invalid or duplicate SKU/quantity');
+      if(!validSkus[sku])throw Error('SKU is not in Products: '+sku);
       seen[sku]=true;
       var idx=data.findIndex(function(r){return String(r[skuCol]).trim()===sku;});
       var current=idx<0?0:Number(data[idx][qtyCol]||0);

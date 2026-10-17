@@ -1,49 +1,36 @@
-# Retina Inventory — Vercel + Google Sign-In + Google Sheets starter
+# Retina Inventory — Original UI + Cloud Integration (PREVIEW / TEST BUILD)
 
-## Status and limitations
-This starter is **read-only** for cloud inventory. It supports Google Sign-In with personal Gmail accounts, server-side ID-token verification, an allowlist in `Users`, and shared Products/Stock reading from Google Sheets. **It does NOT yet process check-in/check-out, purchases, or import to shared Sheets**. The old JSX is preserved as `src/RetinaInventory_Legacy.jsx` for migration; it is not mounted because its localStorage-based stock would be misleading for employees.
+## Contents
+- Original Retina Inventory React interface, including Housing, LED, Driver, BOM, Dimensions, Variants, Compose and History screens.
+- Google Sign-In against approved Active users in the permanent Users sheet.
+- Cloud stock loading and a check-in/check-out request path through Vercel API and Google Apps Script.
+- Products read from the permanent Products tab for SKU validation.
+- Existing Apps Script included under `apps-script/Code.gs`.
 
-## 1. Google Sheet
-Create a spreadsheet from `Retina_Inventory_Google_Sheets_Template.xlsx` (provided separately).
-Use these column headers:
-- Users: `Employee Email`, `Role`, `Status` (e.g. `employee@gmail.com`, `Store`, `Active`)
-- Products: `SKU`, `Product Name`, `Image URL`
-- Stock: `SKU`, `Quantity`
-The sheet may have other columns. Ensure first row is headers.
+## IMPORTANT: Not production-ready
+This is an **integration preview**. It has NOT passed a successful local build or end-to-end browser test in this environment. Keep your existing deployed Vercel site until you test a preview deployment.
 
-## 2. Google Cloud
-1. Create Google Cloud project and configure Google Auth Platform OAuth consent screen (External).
-2. Add employee Gmail accounts as test users if OAuth is in Testing mode.
-3. Create OAuth client: **Web application**. Authorized JS origins: `http://localhost:5173` and later your production `https://YOUR-PROJECT.vercel.app`.
-4. Enable Google Sheets API.
-5. Create service account and JSON key. **Do not put the JSON key in your React source or Git repository.**
-6. Share the Google Sheet with service account email as **Viewer** (read-only starter).
+### Known limitations
+1. The original interface's embedded housing/LED/driver catalogue remains in the original UI. The permanent Products sheet is used to validate movement SKUs, but the UI is not yet fully dynamically generated from every one of the 1,417 Products rows.
+2. The original UI's SKU syntax `D1.0.0` is different from the imported sheet's `D.1`. Only unvaried housing codes can be mapped to imported `D.N` codes. Variant combinations and other codes not in Products are blocked from being transacted.
+3. Purchase uploads are browser-only drafts; the Apps Script does NOT validate receiving quantities against a permanent purchase order.
+4. The History tab shows only this browser session's successful transactions, not the complete cloud Transactions history.
+5. BOM/Dimensions/Variants tabs retain original embedded reference content, not live cloud sheet synchronization.
+6. Google Sheets plus Apps Script locking is not a transactional database. Partial failures may leave inconsistent records. Verify balances and Transactions after each test.
+7. This environment could not run a successful build due to unavailable native build dependencies. The ZIP is source code, not a verified deployment.
+8. Backend Apps Script is a revised version. If you use it, redeploy the Apps Script web app and ensure Vercel RETINA_SCRIPT_URL points to the new `/exec` URL.
 
-## 3. Environment variables (Vercel Project Settings → Environment Variables)
-- `VITE_GOOGLE_CLIENT_ID`: OAuth Web client ID (public).
-- `GOOGLE_CLIENT_ID`: same OAuth Web client ID (server).
-- `GOOGLE_SHEET_ID`: value between `/d/` and `/edit` in the Sheet URL.
-- `GOOGLE_SERVICE_ACCOUNT_EMAIL`: email from service-account JSON.
-- `GOOGLE_PRIVATE_KEY`: private_key from service-account JSON; keep server-side only.
+## Test safely
+1. Keep a backup of the Google Sheet.
+2. Create a separate Vercel **preview** deployment, do not overwrite Production.
+3. Preserve Vercel server-only variables: GOOGLE_CLIENT_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, GOOGLE_SHEET_ID, RETINA_SCRIPT_URL, RETINA_SHARED_SECRET. Preserve frontend VITE_GOOGLE_CLIENT_ID.
+4. In Google OAuth Authorized JavaScript Origins, add the exact preview domain if using Google Sign-In there; alternatively test at the approved permanent domain after code review.
+5. Sign in as an approved Admin.
+6. Test product browsing, search, and all tabs.
+7. Create a draft purchase with SKU `D1.0.0` and quantity 1, then Check-In 1. This maps to sheet SKU `D.1` only if D.1 exists in Products.
+8. Confirm Stock and Transactions in Google Sheets, then test Check-Out.
+9. Test role restrictions and concurrent edits before wider employee use.
+10. Do not import the Database V2 workbook again; the one-time Products import is already done.
 
-## 4. Install in Windows CMD
-Extract project ZIP into a NEW folder (do not overwrite your existing project).
-`cd /d C:\Users\HP\retina-cloud`
-`npm install`
-`npm run build`
-
-## 5. Deploy
-`npm install -g vercel`
-`vercel login`
-`vercel`
-Set Vite framework, `npm run build` build command, `dist` output.
-Set Vercel environment variables. Add deployed HTTPS domain to OAuth JS origins, then redeploy:
-`vercel --prod`
-
-## 6. Local API testing
-`npm run dev` alone runs the Vite UI but **not the /api Vercel Function**. Use `vercel dev` after linking project and configuring environment variables.
-
-## Before enabling live check-in/out
-Implement a transactional stock writer with atomic operations and idempotency (e.g. Google Apps Script LockService serialized writes or a transactional database), server-side authorization per action, purchase-receipt validation, transaction ledger, and audit tests with two concurrent employees. Do not expose a Sheets write key to the browser.
-
-Personal Gmail: allow only verified `@gmail.com` addresses listed as Active in the Users tab.
+## Security
+Never commit .env, service account JSON/private keys, or RETINA_SHARED_SECRET to GitHub.
