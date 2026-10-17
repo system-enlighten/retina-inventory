@@ -1,0 +1,16 @@
+Retina Inventory - product image display update
+
+Based on the uploaded Retina_Inventory_Product_Images_Drive_Link_Fix(1).zip.
+Google sign-in and /api/inventory.js are unchanged from that archive.
+
+Image cards now match the Products sheet SKU D.1, D.2, D.3 directly
+against original UI housing numbers 1, 2, 3. Existing Drive share
+links are converted to thumbnail URLs. Other cards retain placeholders.
+
+Installation: Extract ZIP and replace files in GitHub repository.
+Vercel will build and deploy. Test on https://retina-inventory.vercel.app,
+not on a preview URL that may lack Google OAuth origin authorization.
+
+Build not verified locally: the available native Vite/Rolldown dependency
+is incomplete. Avoid replacing the currently working production deployment
+until a new deployment has built successfully and can be tested.
