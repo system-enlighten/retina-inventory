@@ -877,14 +877,14 @@ export default function RetinaInventory({cloud}) {
                       <div className="tablewrap">
                         <table className="dtable">
                           <thead><tr>{(cat === "Housing" ? ["No.", "Photo", ...hcols.map((c) => c.label), ...sups, "Variant"] : TABLE_HEAD[cat]).map((h, i) => <th key={`${h}${i}`} className={cat === "Housing" && sups.includes(h) ? "sup" : ""}>{h}</th>)}<th className="r">Stock</th><th /></tr></thead>
-                          <tbody>{shown.map((i) => <ItemRow key={`${i.kind}-${i.n || i.code}`} item={i} stockOf={stockOf} mode={mode} cart={cart} onSet={setQty} comboMap={comboMap} />)}</tbody>
+                          <tbody>{shown.map((i) => <ItemRow key={`${i.kind}-${i.n || i.code}`} item={i} stockOf={stockOf} mode={mode} cart={cart} onSet={setQty} comboMap={comboMap} imageFor={imageFor} />)}</tbody>
                         </table>
                       </div>
                     ) : grouped.map(([g, list]) => (
                       <section key={g}>
                         <h2 className="gh">{g}</h2>
                         <div className="grid">
-                          {list.map((i) => <ProductCard key={`${i.kind}-${i.n || i.code}`} item={i} stockOf={stockOf} mode={mode} cart={cart} onSet={setQty} comboMap={comboMap} />)}
+                          {list.map((i) => <ProductCard key={`${i.kind}-${i.n || i.code}`} item={i} stockOf={stockOf} mode={mode} cart={cart} onSet={setQty} comboMap={comboMap} imageFor={imageFor} />)}
                         </div>
                       </section>
                     ))}
