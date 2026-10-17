@@ -159,7 +159,8 @@ function Stepper({ value, onChange, max }) {
 }
 
 /* ---------- product card ---------- */
-function ProductCard({ item, stockOf, mode, cart, onSet, comboMap }) {
+function ProductCard({ item, stockOf, mode, cart, onSet, comboMap, imageFor }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const [v, setV] = useState("");
   const out = mode === "OUT";
   const code = item.kind === "housing" ? buildCode({ h: item.n, v }) : item.code;
@@ -167,10 +168,11 @@ function ProductCard({ item, stockOf, mode, cart, onSet, comboMap }) {
   const qty = cart[code] || 0;
   const empty = out && stock <= 0;
   const combos = item.kind === "housing" ? comboMap[item.n] : null;
+  const imageUrl = imageFor(code);
   return (
     <article className={`card ${empty ? "is-empty" : ""}`}>
       <div className="thumb">
-        <CatIcon cat={item.cat} />
+        {imageUrl && !imageFailed ? <img key={imageUrl} src={imageUrl} alt={item.title} loading="lazy" referrerPolicy="no-referrer" onError={() => setImageFailed(true)} style={{width:"100%",height:"100%",objectFit:"contain",padding:8,boxSizing:"border-box"}} /> : <CatIcon cat={item.cat} />}
         <span className={`stock ${stock <= 0 ? "zero" : stock <= 5 ? "low" : ""}`}>{stock <= 0 ? "Out of stock" : `${fmtQty(stock)} in stock`}</span>
       </div>
       <div className="meta">
@@ -196,7 +198,7 @@ function ProductCard({ item, stockOf, mode, cart, onSet, comboMap }) {
 }
 
 /* ---------- table row (products) ---------- */
-function ItemRow({ item, stockOf, mode, cart, onSet, comboMap }) {
+function ItemRow({ item, stockOf, mode, cart, onSet, comboMap, imageFor }) {
   const [v, setV] = useState("");
   const out = mode === "OUT";
   const code = item.kind === "housing" ? buildCode({ h: item.n, v }) : item.code;
@@ -210,7 +212,7 @@ function ItemRow({ item, stockOf, mode, cart, onSet, comboMap }) {
         <React.Fragment key={i}>
           <td className={i === 0 ? "num" : ""}>{c}</td>
           {i === 0 && item.kind === "housing" && (
-            <td className="photo">{item.img ? <img src={item.img} alt="" loading="lazy" /> : <CatIcon cat="Housing" size={28} />}</td>
+            <td className="photo">{imageFor(code) ? <img src={imageFor(code)} alt={item.title} loading="lazy" referrerPolicy="no-referrer" onError={e=>{e.currentTarget.style.display="none"}} /> : item.img ? <img src={item.img} alt="" loading="lazy" /> : <CatIcon cat="Housing" size={28} />}</td>
           )}
         </React.Fragment>
       ))}
@@ -650,15 +652,24 @@ export default function RetinaInventory({cloud}) {
   };
   const [cloudStock,setCloudStock] = useState({});
   const [cloudSkus,setCloudSkus] = useState(new Set());
+  const [productImages,setProductImages] = useState({});
   const load = async () => {
     try {
       const d=await cloud.api('catalog');
       setCloudSkus(new Set(d.products.map(p=>String(p.SKU||'').trim())));
+      setProductImages(Object.fromEntries(d.products.map(p => [String(p.SKU||'').trim().toUpperCase(), String(p['Image URL']||'').trim()]).filter(([sku,url]) => sku && /^https?:\/\//i.test(url))));
       setCloudStock(Object.fromEntries(d.stock.map(x=>[String(x.SKU||'').trim(),Number(x.Quantity||0)])));
       setError('');
     }catch(e){setError(e.message)}
   };
   useEffect(()=>{load()},[]);
+  const imageFor = (code) => {
+    const direct = productImages[String(code||'').trim().toUpperCase()];
+    if (direct) return direct;
+    const parsed = parseCode(code);
+    if (parsed?.h && !parsed.v && !parsed.l && !parsed.d) return productImages[`D.${parsed.h}`] || '';
+    return '';
+  };
   const sheetSku = (code) => {
     if(cloudSkus.has(code))return code;
     const p=parseCode(code);

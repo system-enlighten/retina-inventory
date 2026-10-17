@@ -34,3 +34,7 @@ This is an **integration preview**. It has NOT passed a successful local build o
 
 ## Security
 Never commit .env, service account JSON/private keys, or RETINA_SHARED_SECRET to GitHub.
+
+## Product photographs from Google Sheets (image update)
+
+The card and housing-table views now read `Products` -> `Image URL` (column E) through the existing authenticated `catalog` API. For a base housing `D1.0.0`, the UI matches sheet SKU `D.1` (and similarly D.2, D.3). The URL must be publicly image-readable; Google Drive thumbnail links can be used. Cards fall back to their original category illustrations when the URL is empty or fails to load. The image mapping reloads when the page is refreshed. This does not replace the embedded catalogue or change stock transaction behavior.
