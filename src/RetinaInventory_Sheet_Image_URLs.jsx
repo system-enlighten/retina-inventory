@@ -917,12 +917,15 @@ export default function RetinaInventory({cloud}) {
     if (cat === "LED")
       return data.L.map((x) => ({
         kind: "led", n: x.n, code: buildCode({ l: x.n }), cat: "LED", title: x.name, group: x.kind || "LED",
+        img: x.img,
         cells: [x.n, x.name, x.kind || "—", x.w || "—", x.volt || "—", x.cct || "—", x.make || "—"],
         sub: [x.w, x.volt, x.cct, x.make].filter(Boolean).join(" · "),
         hay: `${x.n} ${x.name} ${x.make} ${x.kind}`.toLowerCase(),
       }));
     return data.D.map((x) => ({
-      kind: "driver", n: x.n, code: buildCode({ d: x.n }), cat: "Driver", title: x.code,
+      kind: "driver", n: x.n, 
+      img: x.img,
+      code: buildCode({ d: x.n }), cat: "Driver", title: x.code,
       cells: [x.n, x.code, x.mode || "—", x.volt || x.cur || "—", x.load || "—", x.typo || "—", x.ip || "—", x.make || "—"], group: `${x.ip || "Driver"} · ${x.mode || ""}`.trim(),
       sub: [x.volt || x.cur, x.load, x.typo, x.make].filter(Boolean).join(" · "),
       hay: `${x.n} ${x.code} ${x.make} ${x.volt} ${x.load}`.toLowerCase(),
