@@ -1,6 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import{createRoot}from'react-dom/client';
-import RetinaInventory from "./RetinaInventory_Architectural_UI";
+import RetinaInventory from "./RetinaInventory_Cloud_Product_Master";
 function App(){
  const [token,setToken]=useState(''),[user,setUser]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
  async function api(action,details={},credential=token){
