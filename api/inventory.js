@@ -29,7 +29,7 @@ function rows(values=[]) {
   return data.filter(r=>r.some(v=>String(v??'').trim())).map(r=>Object.fromEntries(header.map((h,i)=>[String(h).trim(),r[i]??''])));
 }
 async function readTab(sheets, spreadsheetId, name) {
-  const result = await sheets.spreadsheets.values.get({spreadsheetId, range:`'${name}'!A1:Z10000`});
+  const result = await sheets.spreadsheets.values.get({spreadsheetId, range:`'${name}'!A1:AZ10000`});
   return rows(result.data.values);
 }
 export default async function handler(req,res) {
