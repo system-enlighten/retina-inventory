@@ -1,6 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import {createRoot}from'react-dom/client';
-import RetinaInventory from "./RetinaInventory_Cloud_Product_Master";
+import RetinaInventory from "./RetinaInventory_Sheet_Image_URLs";
 
 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
