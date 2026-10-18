@@ -1,6 +1,9 @@
 import React,{useEffect,useState} from 'react';
-import{createRoot}from'react-dom/client';
+import {createRoot}from'react-dom/client';
 import RetinaInventory from "./RetinaInventory_Cloud_Product_Master";
+
+const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
 function App(){
  const [token,setToken]=useState(''),[user,setUser]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
  async function api(action,details={},credential=token){
