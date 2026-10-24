@@ -1,3 +1,4 @@
+import NomenclatureDatabase from "./NomenclatureDatabase.jsx";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 
 // Safe browser-only storage for the frontend preview.
@@ -988,6 +989,7 @@ export default function RetinaInventory({cloud}) {
         <nav className="nav">
           <button className={view === "shop" ? "on" : ""} onClick={() => setView("shop")}>Products</button>
           <button className={view === "master" ? "on" : ""} onClick={() => setView("master")}>Manage Products</button>
+          <button className={view === "nomenclature" ? "on" : ""} onClick={() => setView("nomenclature")}>Nomenclature</button>
           <button className={view === "purchases" ? "on" : ""} onClick={() => { setView("purchases"); setMode("IN"); }}>Purchases</button>
           <button className={view === "ledger" ? "on" : ""} onClick={() => setView("ledger")}>History (session)</button>
         </nav>
@@ -1001,6 +1003,7 @@ export default function RetinaInventory({cloud}) {
       {error && <div className="banner bad">{error} <button className="linkbtn" onClick={load}>Try again</button></div>}
 
       <main className="main">
+        {view === "nomenclature" && <NomenclatureDatabase />}
         {view === "master" && <ProductMasterEditor overlay={masterOverlay} onChange={updateMaster} cloud={cloud} onReload={load} />}
         {view === "purchases" && <section style={{maxWidth:850,margin:"24px auto",padding:24,background:"white",borderRadius:16}}>
           <h2>Draft purchase / receive stock</h2>
