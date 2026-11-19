@@ -1,0 +1,1963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Retina Lighting — Architectural Product Guide &amp; Technical Master</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Fira+Code:wght@400;500;700&family=Gotu&display=swap">
+<style>
+:root {
+  --ink: #203342;
+  --rust: #99452f;
+  --paper: #fbf8ee;
+  --card: #f7f3e8;
+  --soft: #ded7c8;
+  --mono: "Fira Code", monospace;
+  --serif: "Gotu", serif;
+  --head: "Barlow Condensed", sans-serif;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.container {
+  max-width: 1100px;
+  margin: 30px auto;
+  padding: 0 20px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  font: 700 12px/1.2 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #fff;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn.primary {
+  background: var(--ink);
+  color: #fff;
+}
+
+/* PURE SEMANTIC HTML ARCHITECTURAL CATALOGUE STYLES */
+.catalogue-top-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--soft);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.catalogue-html-publication {
+  background: var(--card) !important;
+  border: 2px solid var(--ink) !important;
+  padding: 32px 36px !important;
+  margin-bottom: 40px !important;
+}
+.cat-cover-sheet {
+  text-align: center;
+  padding-bottom: 28px;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 32px;
+}
+.cat-brand-lockup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.cat-logo-emblem {
+  width: 72px;
+  height: 42px;
+  margin-bottom: 8px;
+}
+.cat-brand-title {
+  font: 700 24px/1 var(--head);
+  letter-spacing: 0.16em;
+  color: var(--ink);
+}
+.cat-brand-tagline {
+  font: 700 10px/1.2 var(--mono);
+  letter-spacing: 0.18em;
+  color: var(--rust);
+  margin-top: 4px;
+}
+.cover-subhead {
+  margin: 18px 0;
+}
+.cover-index {
+  font: 700 11px/1.4 var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.cover-title {
+  font: 400 34px/1.2 var(--serif);
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+.cat-issue-meta {
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.08em;
+  color: var(--rust);
+  text-transform: uppercase;
+}
+.cat-offices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 24px 0 20px;
+  text-align: left;
+}
+.cat-office-card {
+  background: #fff;
+  border: 1px solid var(--soft);
+  padding: 14px 16px;
+}
+.office-tag {
+  font: 700 9px/1.2 var(--mono);
+  letter-spacing: 0.08em;
+  color: var(--rust);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 6px;
+}
+.cat-office-card h4 {
+  font: 600 14px/1.3 var(--head);
+  margin: 0 0 4px;
+  color: var(--ink);
+}
+.cat-office-card p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+.office-phone {
+  font: 600 11px var(--mono);
+  color: var(--ink);
+}
+.cat-cover-quote {
+  margin-top: 20px;
+}
+.cat-cover-quote blockquote {
+  font: italic 18px/1.4 var(--serif);
+  color: var(--ink);
+  margin: 0;
+}
+
+/* Table of Contents */
+.cat-toc-section {
+  background: #fff;
+  border: 1px solid var(--soft);
+  padding: 24px 28px;
+  margin-bottom: 32px;
+}
+.cat-sec-header {
+  margin-bottom: 16px;
+}
+.cat-sec-tag {
+  font: 700 10px/1.2 var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--rust);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 4px;
+}
+.cat-sec-intro {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #374151;
+  margin: 6px 0 16px;
+  max-width: 900px;
+}
+.cat-index-grid {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 12px 28px;
+}
+.cat-index-grid li a {
+  display: flex;
+  align-items: baseline;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 13px;
+  transition: color 0.15s;
+}
+.cat-index-grid li a:hover {
+  color: var(--rust);
+}
+.cat-index-grid .menu-code {
+  font: 700 12px var(--mono);
+  color: var(--rust);
+  width: 44px;
+  flex-shrink: 0;
+}
+.cat-index-grid strong {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.cat-index-grid .index-arrow {
+  margin-left: auto;
+  color: var(--rust);
+  font-weight: 700;
+}
+
+/* Sections */
+.cat-section-block {
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: 1px solid var(--soft);
+}
+
+/* Blueprint Tables */
+.bp-table-wrap {
+  overflow-x: auto;
+  margin: 16px 0 24px;
+  border: 1px solid var(--soft);
+  background: #fff;
+}
+.bp-table-caption {
+  background: #f0ecdf;
+  padding: 8px 12px;
+  font: 700 11px/1.2 var(--mono);
+  color: var(--ink);
+  border-bottom: 1px solid var(--soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.bp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: left;
+}
+.bp-table th {
+  background: #203342;
+  color: #fff;
+  padding: 8px 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-right: 1px solid rgba(255,255,255,0.15);
+  white-space: nowrap;
+}
+.bp-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--soft);
+  border-right: 1px solid var(--soft);
+  color: #203342;
+}
+.bp-table tr:nth-child(even) td {
+  background: #fdfbf7;
+}
+.bp-table tr:hover td {
+  background: #f5f0e1;
+}
+
+/* Theory Grid & Cards */
+.theory-quote-card {
+  background: #203342;
+  color: #fff;
+  padding: 24px 28px;
+  margin: 16px 0 24px;
+  border-left: 4px solid var(--rust);
+}
+.theory-quote-card blockquote {
+  font: 400 24px/1.3 var(--serif);
+  margin: 0 0 8px;
+  color: #fff;
+}
+.quote-sub {
+  font: 500 12px/1.4 var(--mono);
+  color: #d1d5db;
+  letter-spacing: 0.04em;
+}
+.theory-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.theory-card {
+  background: #fff;
+  border: 1px solid var(--soft);
+  border-top: 3px solid var(--rust);
+  padding: 18px 20px;
+}
+.theory-tag {
+  font: 700 9px/1 var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--rust);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 6px;
+}
+.theory-card h3 {
+  font: 600 17px/1.2 var(--head);
+  color: var(--ink);
+  margin: 0 0 8px 0;
+  text-transform: uppercase;
+}
+.theory-card p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #374151;
+  margin: 0 0 8px;
+}
+.theory-list {
+  padding-left: 18px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #374151;
+  font-family: var(--mono);
+}
+
+/* Fixtures Row */
+.cat-fixtures-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+  margin: 18px 0 24px;
+}
+.cat-fixture-card {
+  background: #fff;
+  border: 1px solid var(--soft);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cat-fixture-img {
+  width: 100%;
+  height: 130px;
+  object-fit: contain;
+  background: #f8f6f0;
+  border-bottom: 1px solid var(--soft);
+  padding: 8px;
+  box-sizing: border-box;
+}
+.cat-fixture-info {
+  padding: 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.cat-fixture-info h4 {
+  font: 500 16px/1.2 var(--serif);
+  margin: 0 0 2px;
+  color: var(--ink);
+}
+.cat-code {
+  font: 600 11px var(--mono);
+  color: var(--rust);
+  margin-bottom: 6px;
+}
+.cat-fixture-info p {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #4b5563;
+  margin: 0 0 10px;
+}
+.cat-spec-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.cat-spec-chips span {
+  background: #f0ecdf;
+  color: var(--ink);
+  font: 700 9px var(--mono);
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+/* Control Gear Box */
+.cat-control-gear-box {
+  background: #fdfbf7;
+  border: 1px solid var(--soft);
+  padding: 12px 16px;
+  margin: 16px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.cat-control-gear-box strong {
+  color: var(--rust);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  font-size: 11px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Nomenclature syntax box */
+.cat-nomenclature-guide {
+  background: #fff;
+  border: 1px solid var(--soft);
+  padding: 18px 22px;
+  margin: 20px 0;
+}
+.nom-header {
+  font: 700 12px var(--mono);
+  text-transform: uppercase;
+  color: var(--rust);
+  margin-bottom: 8px;
+  letter-spacing: 0.08em;
+}
+.nom-formula {
+  background: #203342;
+  color: #fff;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 13px;
+  border-radius: 2px;
+  margin-bottom: 12px;
+}
+.nom-example {
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: var(--mono);
+  color: #374151;
+}
+
+/* Footer */
+.cat-footer {
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 2px solid var(--ink);
+  text-align: center;
+}
+
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+  body {
+    background: #fff !important;
+  }
+  .catalogue-top-actions {
+    display: none !important;
+  }
+  .container {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .catalogue-html-publication {
+    border: none !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+  .cat-section-block {
+    page-break-before: always;
+  }
+  .bp-table-wrap {
+    page-break-inside: avoid;
+  }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="catalogue-top-actions">
+  <div>
+    <span class="draft">OFFICIAL ARCHITECTURAL PUBLICATION · 66-PAGE SPECIFICATION MASTER</span>
+    <h3 style="font: 400 24px/1.2 var(--serif); margin: 3px 0 0; color: var(--ink);">Retina Lighting Product Guide &amp; Technical Register</h3>
+  </div>
+  <div class="row" style="gap:8px">
+    <button type="button" class="btn primary" onclick="window.print()">Print Catalogue Booklet (Cmd+P)</button>
+    <a href="#cat-toc" class="btn">Table of Contents</a>
+  </div>
+</div>
+
+<article class="menu-sheet catalogue-html-publication">
+
+  <header class="menu-cover cat-cover-sheet" id="cat-top">
+    <div class="cover-brand">
+      <div class="cat-brand-lockup">
+        <svg class="cat-logo-emblem" viewBox="0 0 88 52" fill="none" stroke="currentColor" aria-hidden="true">
+          <circle cx="43" cy="26" r="17" stroke="#203342" stroke-width="2"/>
+          <circle cx="43" cy="26" r="8" stroke="#203342" stroke-width="1.5"/>
+          <circle cx="43" cy="26" r="3" fill="#99452f"/>
+          <line x1="16" y1="26" x2="70" y2="26" stroke="#203342" stroke-width="1.5"/>
+          <line x1="43" y1="2" x2="43" y2="50" stroke="#203342" stroke-width="1.5"/>
+        </svg>
+        <div class="cat-brand-title">RETINA LIGHTING</div>
+        <div class="cat-brand-tagline">ARCHITECTURAL LIGHTING COMPANY · WWW.RETINA.COM</div>
+      </div>
+    </div>
+    
+    <div class="cover-subhead">
+      <div class="cover-index">DOWNLIGHTS &nbsp;|&nbsp; WALL HIGHLIGHTERS &nbsp;|&nbsp; WALL WASHERS &nbsp;|&nbsp; TEXTURE GRAZERS &nbsp;|&nbsp; UPLIGHTS &nbsp;|&nbsp; LINEAR COVE &nbsp;|&nbsp; CURTAIN GRAZERS</div>
+      <h2 class="cover-title">Architectural Product Guide &amp; Specification Master</h2>
+      <p class="cat-issue-meta">ISSUE: 2026.01 · COMPREHENSIVE FIXTURE CATALOGUE, PHOTOMETRIC THEORY &amp; NOMENCLATURE</p>
+    </div>
+
+    <div class="cat-offices-grid">
+      <div class="cat-office-card">
+        <span class="office-tag">DELHI DESIGN STUDIO</span>
+        <h4>A2/29 Ashirwad Apts, Paschim Vihar, Delhi</h4>
+        <p>Project Consultations &amp; Architectural Specifications</p>
+        <span class="office-phone">Appointments: +91 9936305557</span>
+      </div>
+      <div class="cat-office-card">
+        <span class="office-tag">HEAD OFFICE &amp; MANUFACTURING</span>
+        <h4>18 Chak, Zero Road, Prayagraj, India</h4>
+        <p>Factory Assembly, Engineering &amp; Photometrics Lab</p>
+        <span class="office-phone">Contact: contact@retina.com</span>
+      </div>
+      <div class="cat-office-card">
+        <span class="office-tag">EXPERIENCE CENTRE</span>
+        <h4>40/101 Lukerganj, Prayagraj, India</h4>
+        <p>Live Lighting Simulation, Darkroom &amp; Optics Showcase</p>
+        <span class="office-phone">Appointments: +91 9335154645</span>
+      </div>
+    </div>
+
+    <div class="cat-cover-quote">
+      <blockquote>“ Illuminate your life with experienced lighting “</blockquote>
+    </div>
+  </header>
+
+
+  <section class="menu-contents cat-toc-section" id="cat-toc">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">ARCHITECTURAL INDEX</span>
+      <h2 class="menu-title">Table of Contents</h2>
+    </div>
+    <ul class="menu-index cat-index-grid">
+      <li><a href="#cat-matrix"><span class="menu-code">01</span><strong>Master Luminaire Index (Matrix 21×10)</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-theory"><span class="menu-code">02</span><strong>Human-Centric Lighting Theory &amp; Biological Foundations</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-100"><span class="menu-code">100</span><strong>Architectural Recessed Downlights</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-200"><span class="menu-code">200</span><strong>Surface &amp; Cylinder Downlights</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-300"><span class="menu-code">300</span><strong>Wall Highlighters &amp; Framing Projectors</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-400"><span class="menu-code">400</span><strong>Asymmetric Wall Washers</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-500"><span class="menu-code">500</span><strong>Micro-Relief Texture Grazers</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-600"><span class="menu-code">600</span><strong>Architectural Uplights &amp; Inground Wells</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-700"><span class="menu-code">700</span><strong>Linear Cove &amp; Architectural Contour</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-800"><span class="menu-code">800</span><strong>Curtain Grazers</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-900"><span class="menu-code">900</span><strong>Control Gear, DALI-2, Casambi &amp; Remote Drivers</strong><span class="index-arrow">↘</span></a></li>
+      <li><a href="#cat-appendix"><span class="menu-code">1000</span><strong>Technical Appendix: Apertures, IP Ratings &amp; Nomenclature</strong><span class="index-arrow">↘</span></a></li>
+    </ul>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-matrix">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SECTION 01 / MASTER LUMINAIRE SCHEDULE</span>
+      <h2 class="menu-title"><span class="menu-code">01</span> Master Luminaire Matrix</h2>
+      <p class="cat-sec-intro">Full cross-matrix mapping luminaire types across mounting geometries (Fixed, Adjustable, Recessed, Surface, Track) and mounting heights (Single Height 9ft/10ft/12ft, Double Height, Triple Height).</p>
+    </div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 01: Master Luminaire Type &amp; Height Matrix (21 Rows × 10 Columns)</div>
+<table class="bp-table">
+<thead><tr>
+<th>LUMINAIRE TYPE</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>DOWNLIGHT</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>FIXED</td>
+<td>FIXED</td>
+<td>FIXED</td>
+<td>FIXED</td>
+<td>ADJ</td>
+<td>ADJ</td>
+<td>ADJ</td>
+<td>ADJ</td>
+<td>FIXED</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>D1CR.3S</td>
+<td>D2CR.3S</td>
+<td>D3CR.3S</td>
+<td>D4CR.3S</td>
+<td>D+1CR.3S</td>
+<td>D+2CR.3S</td>
+<td>D+3CR.3S</td>
+<td>D+4CR.3S</td>
+<td>D1CS.3S</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>D1CR.6S</td>
+<td>D2CR.6S</td>
+<td>D3CR.6S</td>
+<td>D4CR.6S</td>
+<td>D+1CR.6S</td>
+<td>D+2CR.6S</td>
+<td>D+3CR.6S</td>
+<td>D+4CR.6S</td>
+<td>D1CS.6S</td>
+</tr>
+<tr>
+<td>Triple Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>D1CR.9S</td>
+<td>D2CR.9S</td>
+<td>D3CR.9S</td>
+<td>D4CR.9S</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>WALL HIGHLIGHTER</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>WALL HIGHLIGHTER</td>
+<td>RECESSED</td>
+<td>RECESSED</td>
+<td>RECESSED</td>
+<td>RECESSED</td>
+<td>SURFACE</td>
+<td>SURFACE</td>
+<td>SURFACE</td>
+<td>SURFACE</td>
+<td>TRACK</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>W1CR.3S</td>
+<td>W2CR.3S</td>
+<td>W3CR.3S</td>
+<td>W4CR.3S</td>
+<td>W1CS.3S</td>
+<td>W2CS.3S</td>
+<td>W3CS.3S</td>
+<td>W4CS.3S</td>
+<td>W1CT.3S</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>W1CR.6S</td>
+<td>W2CR.6S</td>
+<td>W3CR.6S</td>
+<td>W4CR.6S</td>
+<td>W1CS.6S</td>
+<td>W2CS.6S</td>
+<td>W3CS.6S</td>
+<td>W4CS.6S</td>
+<td>W1CT.6S</td>
+</tr>
+<tr>
+<td>WALL WASHER</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>—</td>
+<td>RECESSED</td>
+<td>RECESSED</td>
+<td>RECESSED</td>
+<td>RECESSED</td>
+<td>SURFACE</td>
+<td>SURFACE</td>
+<td>SURFACE</td>
+<td>SURFACE</td>
+<td>TRACK</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>W1CR.3A</td>
+<td>W2CR.3A</td>
+<td>W3CR.3A</td>
+<td>W4CR.3A</td>
+<td>W1CS.3A</td>
+<td>W2CS.3A</td>
+<td>W3CS.3A</td>
+<td>W4CS.3A</td>
+<td>W1CT.3A</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>W1CR.6A</td>
+<td>W2CR.6A</td>
+<td>W3CR.6A</td>
+<td>W4CR.6A</td>
+<td>W1CS.6A</td>
+<td>W2CS.6A</td>
+<td>W3CS.6A</td>
+<td>W4CS.6A</td>
+<td>W1CT.6A</td>
+</tr>
+</tbody></table></div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-theory">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SECTION 02 / PHOTOMETRIC PRINCIPLES &amp; SCIENCE</span>
+      <h2 class="menu-title"><span class="menu-code">02</span> Human-Centric Lighting Theory</h2>
+      <p class="cat-sec-intro">How illumination directly governs psychology, circadian rhythms, eye comfort, and spatial perception.</p>
+    </div>
+
+    <div class="theory-quote-card">
+      <blockquote>“ Our attention always goes towards the brightest point in a space “</blockquote>
+      <div class="quote-sub">The fundamental axiom of architectural illumination: guiding focus, creating depth, and establishing spatial hierarchy.</div>
+    </div>
+
+    <div class="theory-cards-grid">
+      <div class="theory-card">
+        <span class="theory-tag">BIOLOGY &amp; MIND</span>
+        <h3>Psychological Effect on Mind &amp; Circadian Rhythm</h3>
+        <p>Light has a huge impact on human behavior and mood. We feel alert or calm depending on whether cool or warm light is present.</p>
+        <p>Biologically, light is the primary external zeitgeber for our 24-hour circadian cycle, regulating cortisol production, appetite, and melatonin secretion for restorative sleep. The colour temperature and lux exposure tells your brain precisely what time of day it is.</p>
+      </div>
+
+      <div class="theory-card">
+        <span class="theory-tag">SPATIAL PERCEPTION</span>
+        <h3>Light as the 4th Dimension of Architecture</h3>
+        <p>Along with time, light is commonly referred to as the 4th dimension of architecture. It impacts how we think, how we feel, and how we inhabit spaces.</p>
+        <p>We add drama through focused direct light, or soften and expand volume through indirect perimeter glow. Accent lighting emphasizes spatial depth, while orientation lighting intuitively directs human circulation.</p>
+      </div>
+
+      <div class="theory-card">
+        <span class="theory-tag">STANDARDS &amp; LUX</span>
+        <h3>IS3646 Illumination Standards &amp; Visual Comfort</h3>
+        <p>Before laying out luminaires, establish target lux levels based on the Indian Standard Code of Practice for Interior Illumination IS3646.</p>
+        <ul class="theory-list">
+          <li><strong>Circulation &amp; Foyers:</strong> 100–150 Lux</li>
+          <li><strong>General Living &amp; Lounges:</strong> 150–200 Lux (Warm CCT)</li>
+          <li><strong>Kitchen Worktops &amp; Food Prep:</strong> 400–500 Lux (High CRI >90)</li>
+          <li><strong>Reading Desks &amp; Offices:</strong> 500 Lux (Low UGR &lt; 19)</li>
+        </ul>
+      </div>
+
+      <div class="theory-card">
+        <span class="theory-tag">VISUAL COMFORT</span>
+        <h3>Glare Elimination: Discomfort vs. Disability Glare</h3>
+        <p>Glare is the leading cause of eye strain and visual fatigue. Retina luminaires eliminate direct diode exposure through secondary dark reflectors and deep regressed baffles.</p>
+        <p>By enforcing an optical cut-off angle exceeding 30°, the fixture recedes into the ceiling plane, illuminating surfaces without becoming a source of visual irritation (UGR &lt; 19).</p>
+      </div>
+
+      <div class="theory-card">
+        <span class="theory-tag">DESIGN WARNING</span>
+        <h3>Common Lighting Mistakes to Avoid</h3>
+        <p><strong>Mistake 1: Symmetry over Task.</strong> Laying out an evenly spaced grid of downlights across a ceiling ignoring furniture and task surfaces creates a dull, uninspiring interior while wasting energy.</p>
+        <p><strong>Mistake 2: Over-Illumination &amp; Flatness.</strong> Lighting an entire room equally eliminates natural shadows, washing out architectural textures.</p>
+      </div>
+
+      <div class="theory-card">
+        <span class="theory-tag">CIRCADIAN TECH</span>
+        <h3>Body Activity Level &amp; Night Shift Dynamics</h3>
+        <p>Your body activity levels—how alert or drowsy you feel—are directly modulated by spectral wavelength and brightness.</p>
+        <p>Retina Night Shift technology provides smooth, flicker-free transitions: energetic 4000K–5000K daylight during morning peak productivity, gradually warm-dimming down to 2700K–1800K candlelight in the evening to preserve natural melatonin secretion.</p>
+      </div>
+    </div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-100">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SERIES 100 / DIRECTIONAL TASK &amp; ACCENT</span>
+      <h2 class="menu-title"><span class="menu-code">100</span> Architectural Recessed Downlights</h2>
+      <p class="cat-sec-intro">Downlights throw precision illumination downwards onto horizontal task planes, accentuating tables, kitchen islands, and focal objects. Deep secondary reflectors ensure glare-free visual comfort.</p>
+    </div>
+
+    <div class="cat-fixtures-row">
+      <div class="cat-fixture-card">
+        <img src="./product_guide_assets/fixtures/d1.jpg" alt="Floor Highlighter D1" class="cat-fixture-img" />
+        <div class="cat-fixture-info">
+          <h4>Floor Highlighter D1</h4>
+          <span class="cat-code">D1CR.3S (D1a.1.1)</span>
+          <p>Compact Ø55mm cutout downlight with 24° precision lens and white trim. Glare-free optic for residential hallways and lounges.</p>
+          <div class="cat-spec-chips">
+            <span>10W</span><span>Ø55mm Cutout</span><span>24° Beam</span><span>IP44</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cat-fixture-card">
+        <img src="./product_guide_assets/fixtures/d2.jpg" alt="Deep Anti-Glare D2" class="cat-fixture-img" />
+        <div class="cat-fixture-info">
+          <h4>Deep Anti-Glare D2</h4>
+          <span class="cat-code">D1CR.3S (D2a.2.2)</span>
+          <p>Deep recessed architectural luminaire with specular chrome reflector. Ø70mm cutout, height 60mm, IP44 rating.</p>
+          <div class="cat-spec-chips">
+            <span>12W</span><span>Ø70mm Cutout</span><span>24° / 36°</span><span>IP44</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cat-fixture-card">
+        <img src="./product_guide_assets/fixtures/d3.jpg" alt="Architectural Square D3" class="cat-fixture-img" />
+        <div class="cat-fixture-info">
+          <h4>Architectural Square D3</h4>
+          <span class="cat-code">D1CS.3S (D3a.3.3)</span>
+          <p>Square aperture high-output luminaire. 125×125mm cutout, DALI-2 dimmable driver, architectural baffle.</p>
+          <div class="cat-spec-chips">
+            <span>18W</span><span>125×125mm</span><span>24° / 45°</span><span>IP44</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cat-fixture-card">
+        <img src="./product_guide_assets/fixtures/d5.jpg" alt="High-Output Accent D5" class="cat-fixture-img" />
+        <div class="cat-fixture-info">
+          <h4>High-Output Accent D5</h4>
+          <span class="cat-code">D1CR.6S (D5a.2.2)</span>
+          <p>Double-height ceiling downlight. 12W, Ø63mm aperture with Ø75mm cutout. High-candela center beam.</p>
+          <div class="cat-spec-chips">
+            <span>12W</span><span>Ø75mm Cutout</span><span>15° / 24°</span><span>IP44</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 100.1: Downlight Family &amp; Mounting Options (Page 19)</div>
+<table class="bp-table">
+<thead><tr>
+<th>LUMINAIRE TYPE</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>DOWNLIGHT</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>DOWNLIGHT</td>
+<td>FIXED</td>
+<td>ADJ</td>
+<td>SURFACE</td>
+<td>TRACK</td>
+<td>SLOT MOUNTED</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>D1CR.3S</td>
+<td>D+1CR.3S</td>
+<td>D1CS.3S</td>
+<td>D1CT.3S</td>
+<td>D4RS.3S</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>D1CR.6S</td>
+<td>D+1CR.6S</td>
+<td>D1CS.6S</td>
+<td>D1CT.6S</td>
+<td>D4RS.6S</td>
+</tr>
+<tr>
+<td>Triple Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Triple Height</td>
+<td>D1CR.9S</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody></table></div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 100.2: Downlight Engineering Properties &amp; Beam Distributions (Page 23)</div>
+<table class="bp-table">
+<thead><tr>
+<th>Lighting Tool</th>
+<th>Lighting Tool</th>
+<th>Downlight</th>
+<th>Downlight</th>
+<th>Downlight</th>
+<th>Downlight</th>
+<th>Downlight</th>
+<th>Downlight</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Mounting</td>
+<td>Mounting</td>
+<td>Concealed</td>
+<td>Concealed</td>
+<td>Surface</td>
+<td>Surface</td>
+<td>Track</td>
+<td>Slot Mounted</td>
+</tr>
+<tr>
+<td>Beam Angle</td>
+<td>Angle</td>
+<td>7º</td>
+<td>15º</td>
+<td>24º</td>
+<td>36º</td>
+<td>45º</td>
+<td>65º</td>
+</tr>
+<tr>
+<td>Beam Angle</td>
+<td>Adjustment</td>
+<td>Fixed</td>
+<td>Fixed</td>
+<td>Fixed</td>
+<td>Adjustable</td>
+<td>Adjustable</td>
+<td>Adjustable</td>
+</tr>
+<tr>
+<td>Brightness</td>
+<td>Brightness</td>
+<td>Low Brightness</td>
+<td>Low Brightness</td>
+<td>Bright</td>
+<td>Bright</td>
+<td>Very Bright</td>
+<td>Very Bright</td>
+</tr>
+<tr>
+<td>Control</td>
+<td>Control</td>
+<td>Dimmable</td>
+<td>Dimmable</td>
+<td>Dimmable</td>
+<td>Non Dimmable</td>
+<td>Non Dimmable</td>
+<td>Non Dimmable</td>
+</tr>
+</tbody></table></div>
+
+    <div class="cat-control-gear-box">
+      <strong>Available Control Gear &amp; Drivers:</strong>
+      <span>Ltech Phase-Cut TRIAC + Retina Rotary Dimmer</span> &nbsp;•&nbsp;
+      <span>DALI-2 Addressable + Legrand / KNX</span> &nbsp;•&nbsp;
+      <span>Casambi BLE Wireless Mesh</span>
+    </div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-200">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SERIES 200 / SURFACE &amp; MONOLITHIC</span>
+      <h2 class="menu-title"><span class="menu-code">200</span> Surface &amp; Cylinder Downlights</h2>
+      <p class="cat-sec-intro">Engineered for exposed concrete slabs, wooden beams, and areas where recessed depth is unavailable. Crisp cylindrical architectural geometry.</p>
+    </div>
+
+    <div class="cat-fixtures-row">
+      <div class="cat-fixture-card">
+        <img src="./product_guide_assets/fixtures/d11.jpg" alt="Surface Cylinder D11" class="cat-fixture-img" />
+        <div class="cat-fixture-info">
+          <h4>Surface Cylinder D11</h4>
+          <span class="cat-code">D1SR.3S (D11a.1.1)</span>
+          <p>Architectural ceiling surface cylinder with internal heatsink and anti-glare baffle. Clean ceiling mounting flange.</p>
+          <div class="cat-spec-chips">
+            <span>10W</span><span>Surface Mount</span><span>36° Beam</span><span>IP44</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-300">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SERIES 300 / VERTICAL ACCENTUATION</span>
+      <h2 class="menu-title"><span class="menu-code">300</span> Wall Highlighters &amp; Framing Projectors</h2>
+      <p class="cat-sec-intro">Throws directional light towards the vertical plane to spotlight artwork, paintings, sculptures, and architectural feature walls without spill.</p>
+    </div>
+
+    <div class="cat-fixtures-row">
+      <div class="cat-fixture-card">
+        <img src="./product_guide_assets/fixtures/d10.jpg" alt="Zoomable Focus D10" class="cat-fixture-img" />
+        <div class="cat-fixture-info">
+          <h4>Zoomable Focus D10</h4>
+          <span class="cat-code">W1CR.3S (D10a.2.2)</span>
+          <p>Zoomable optical focus downlight. 14° to 32° continuous zoom adjustment, Ø75mm cutout, 355° rotation.</p>
+          <div class="cat-spec-chips">
+            <span>12W</span><span>Ø75mm Cutout</span><span>14°–32° Zoom</span><span>IP40</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cat-fixture-card">
+        <img src="./product_guide_assets/fixtures/d51.jpg" alt="Ball Spotlight D51" class="cat-fixture-img" />
+        <div class="cat-fixture-info">
+          <h4>Ball Spotlight D51</h4>
+          <span class="cat-code">W1SR.3S (D51a.1.1)</span>
+          <p>Multi-axis spherical ball spotlight with 360° rotation and 90° tilt. Machined aluminum body, 7W 3000K 90CRI.</p>
+          <div class="cat-spec-chips">
+            <span>7W</span><span>360° Ball Joint</span><span>24° Beam</span><span>IP40</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 300.1: Wall Highlighter Matrix with Zoom Optics (Page 25)</div>
+<table class="bp-table">
+<thead><tr>
+<th>LUMINAIRE TYPE</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>WALL HIGHLIGHTER</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>WALL HIGHLIGHTER</td>
+<td>RECESSED</td>
+<td>SURFACE</td>
+<td>TRACK</td>
+<td>PULL OUT</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>W1CR.3S</td>
+<td>W1CS.3S</td>
+<td>W1CT.3S</td>
+<td>W1CP.3S</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>W1CR.6S</td>
+<td>W1CS.6S</td>
+<td>W1CT.6S</td>
+<td>W1CP.6S</td>
+</tr>
+</tbody></table></div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 300.2: Wall Highlighter Mounting &amp; Optical Engineering Schedule (Page 30)</div>
+<table class="bp-table">
+<thead><tr>
+<th>Lighting Tool</th>
+<th>Lighting Tool</th>
+<th>Wall Highlighter</th>
+<th>Wall Highlighter</th>
+<th>Wall Highlighter</th>
+<th>Wall Highlighter</th>
+<th>Wall Highlighter</th>
+<th>Wall Highlighter</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Mounting</td>
+<td>Mounting</td>
+<td>Concealed</td>
+<td>Concealed</td>
+<td>Surface</td>
+<td>Surface</td>
+<td>Track</td>
+<td>Pull out</td>
+</tr>
+<tr>
+<td>Beam Angle</td>
+<td>Fxed Lens</td>
+<td>7º</td>
+<td>15º</td>
+<td>24º</td>
+<td>36º</td>
+<td>45º</td>
+<td>65º</td>
+</tr>
+<tr>
+<td>Beam Angle</td>
+<td>Zoom Lens</td>
+<td>12º-45º</td>
+<td>12º-45º</td>
+<td>12º-45º</td>
+<td>10º-70º</td>
+<td>10º-70º</td>
+<td>10º-70º</td>
+</tr>
+<tr>
+<td>Brightness</td>
+<td>Brightness</td>
+<td>Low Brightness</td>
+<td>Low Brightness</td>
+<td>Bright</td>
+<td>Bright</td>
+<td>Very Bright</td>
+<td>Very Bright</td>
+</tr>
+<tr>
+<td>Control</td>
+<td>Control</td>
+<td>Dimmable</td>
+<td>Dimmable</td>
+<td>Dimmable</td>
+<td>Non Dimmable</td>
+<td>Non Dimmable</td>
+<td>Non Dimmable</td>
+</tr>
+</tbody></table></div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-400">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SERIES 400 / UNIFORM VERTICAL ILLUMINANCE</span>
+      <h2 class="menu-title"><span class="menu-code">400</span> Asymmetric Wall Washers</h2>
+      <p class="cat-sec-intro">Wall washing provides perfectly uniform vertical luminance from ceiling trim to floor skirting board. Because vertical illuminance expands the perceived volume of a space, wall washing delivers the highest visual comfort index in architectural lighting.</p>
+    </div>
+
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 400.1: Wall Washer Luminaire Family Schedule (Page 32)</div>
+<table class="bp-table">
+<thead><tr>
+<th>LUMINAIRE TYPE</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>WALL WASHER</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>WALL WASHER</td>
+<td>RECESSED</td>
+<td>SURFACE</td>
+<td>TRACK</td>
+<td>CIELING WASH</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>W1CR.3A</td>
+<td>W1CS.3A</td>
+<td>W1CT.3A</td>
+<td>W1WS.3A</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>W1CR.6A</td>
+<td>W1CS.6A</td>
+<td>W1CT.6A</td>
+<td>W1WS.6A</td>
+</tr>
+</tbody></table></div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 400.2: Wall Washer Mounting, Ingress Protection &amp; Control Schedule (Page 36)</div>
+<table class="bp-table">
+<thead><tr>
+<th>Lighting Tool</th>
+<th>Wall Washer</th>
+<th>Wall Washer</th>
+<th>Wall Washer</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Mounting</td>
+<td>Concealed</td>
+<td>Surface</td>
+<td>Track</td>
+</tr>
+<tr>
+<td>IP</td>
+<td>IP40</td>
+<td>IP65</td>
+<td>IP65</td>
+</tr>
+<tr>
+<td>Height Upto</td>
+<td>3M</td>
+<td>6M</td>
+<td>6M</td>
+</tr>
+<tr>
+<td>Brightness</td>
+<td>Bright</td>
+<td>Very Bright</td>
+<td>Very Bright</td>
+</tr>
+<tr>
+<td>Control</td>
+<td>Dimmable</td>
+<td>Non-Dimmable</td>
+<td>Non-Dimmable</td>
+</tr>
+</tbody></table></div>
+
+    <div class="cat-control-gear-box">
+      <strong>Installation Spacing Rule of Thumb:</strong>
+      <span>Distance from wall = 1/3 ceiling height (e.g. 1.0m from wall for 3.0m ceiling). Distance between luminaires = 1.0× to 1.2× distance from wall.</span>
+    </div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-500">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SERIES 500 / MICRO-SHADOW RELIEF</span>
+      <h2 class="menu-title"><span class="menu-code">500</span> Micro-Relief Texture Grazers</h2>
+      <p class="cat-sec-intro">Positioned close to rough stone, exposed brick, timber battens, or acoustic plaster, texture grazers cast crisp, ultra-narrow micro-shadows that dramatize tactile depth and material richness.</p>
+    </div>
+
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 500.1: Texture Grazer Form Factors &amp; Mounting (Page 38)</div>
+<table class="bp-table">
+<thead><tr>
+<th>LUMINAIRE TYPE</th>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Texture Grazer</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Texture Grazer</td>
+<td>LINEAR</td>
+<td>CURVE</td>
+<td>IN-GROUND</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>L1RS.3G|020</td>
+<td>L+1RS.3G|021</td>
+<td>L1FR.3G|022</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>L1RS.6G|020</td>
+<td>L+1RS.6G|021</td>
+<td>L1FR.6G|022</td>
+</tr>
+<tr>
+<td>Triple Height</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Triple Height</td>
+<td>L1RS.9G|020</td>
+<td>L+1RS.9G|021</td>
+<td>—</td>
+</tr>
+</tbody></table></div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 500.2: Texture Grazer Beam, Ingress Protection &amp; Dimming (Page 42)</div>
+<table class="bp-table">
+<thead><tr>
+<th>Lighting Tool</th>
+<th>Texture Grazer</th>
+<th>Texture Grazer</th>
+<th>Texture Grazer</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Mounting</td>
+<td>Linear</td>
+<td>Curve</td>
+<td>In-ground</td>
+</tr>
+<tr>
+<td>IP</td>
+<td>IP40</td>
+<td>IP65</td>
+<td>IP65</td>
+</tr>
+<tr>
+<td>Height Upto</td>
+<td>3M</td>
+<td>6M</td>
+<td>9M</td>
+</tr>
+<tr>
+<td>Brightness</td>
+<td>Bright</td>
+<td>Very Bright</td>
+<td>Very Bright</td>
+</tr>
+<tr>
+<td>Control</td>
+<td>Dimmable</td>
+<td>Non-Dimmable</td>
+<td>Non-Dimmable</td>
+</tr>
+</tbody></table></div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-600">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SERIES 600 / GROUND ACCENT &amp; VERTICAL DRAMA</span>
+      <h2 class="menu-title"><span class="menu-code">600</span> Architectural Uplights &amp; Inground Wells</h2>
+      <p class="cat-sec-intro">Recessed flush into exterior paving, timber decks, interior stone floors, or landscape lawns. Emphasizes columns, archways, and vegetation with striking upward contrast.</p>
+    </div>
+
+    <div class="cat-fixtures-row">
+      <div class="cat-fixture-card">
+        <img src="./product_guide_assets/fixtures/d110.jpg" alt="Landscape Spike D110" class="cat-fixture-img" />
+        <div class="cat-fixture-info">
+          <h4>Landscape Spike D110</h4>
+          <span class="cat-code">U1SR.3S (D110a.2.4)</span>
+          <p>Exterior landscape projector with ground spike. 12W, IP65 waterproof housing, 24V remote driver.</p>
+          <div class="cat-spec-chips">
+            <span>12W</span><span>Ground Spike</span><span>IP65 Water Jet</span><span>24VDC</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 600.1: Uplight Luminaire Matrix (Page 44)</div>
+<table class="bp-table">
+<thead><tr>
+<th>LUMINAIRE TYPE</th>
+<th>—</th>
+<th>—</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Uplight</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Uplight</td>
+<td>FIXED</td>
+<td>ADJ</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>U1FR.3M</td>
+<td>U+1FR.3M</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>U1FR.6M</td>
+<td>U+1FR.6M</td>
+</tr>
+</tbody></table></div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 600.2: Inground IP65/IP68 Engineering Specifications (Page 48)</div>
+<table class="bp-table">
+<thead><tr>
+<th>Lighting Tool</th>
+<th>Uplight</th>
+<th>Uplight</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Mounting</td>
+<td>Recessed</td>
+<td>Surface</td>
+</tr>
+<tr>
+<td>IP</td>
+<td>IP65</td>
+<td>IP68</td>
+</tr>
+<tr>
+<td>Height Upto</td>
+<td>3M</td>
+<td>6M</td>
+</tr>
+<tr>
+<td>Brightness</td>
+<td>Bright</td>
+<td>Very Bright</td>
+</tr>
+<tr>
+<td>Control</td>
+<td>Dimmable</td>
+<td>Non-Dimmable</td>
+</tr>
+</tbody></table></div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-700">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SERIES 700 / INDIRECT PERIMETER &amp; COVE FILL</span>
+      <h2 class="menu-title"><span class="menu-code">700</span> Linear Cove &amp; Architectural Contour</h2>
+      <p class="cat-sec-intro">Indirect fill lighting designed to uniformly wash ceiling vaults and perimeter coves without scallop lines or dark socket shadows. Recommended vertical clearance: H=50cm ideal, H=10cm minimum with diffuse optics.</p>
+    </div>
+
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 700.1: Cove Architecture &amp; Tray Mounting Options (Page 50)</div>
+<table class="bp-table">
+<thead><tr>
+<th>LUMINAIRE TYPE</th>
+<th>—</th>
+<th>—</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>LINEAR LIGHT&lt;br&gt;[COVE]</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>LINEAR LIGHT&lt;br&gt;[COVE]</td>
+<td>TRAY</td>
+<td>PERIMETER</td>
+</tr>
+<tr>
+<td>D&lt;=20</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>D&lt;=20</td>
+<td>L1CV.IB|023</td>
+<td>L1RS.DB|024</td>
+</tr>
+<tr>
+<td>D&gt;=30</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>D&gt;=30</td>
+<td>L1CV.IH|024</td>
+<td>—</td>
+</tr>
+<tr>
+<td>CURVE&lt;br&gt;[TOP-BEND]</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>CURVE&lt;br&gt;[TOP-BEND]</td>
+<td>L+1CV.IB|025</td>
+<td>—</td>
+</tr>
+</tbody></table></div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 700.2: Linear LED Electrical &amp; Photometric Schedule (Page 54)</div>
+<table class="bp-table">
+<thead><tr>
+<th>Fitting Type</th>
+<th>Size (mm)</th>
+<th>Voltage (VDC)</th>
+<th>Power (W)</th>
+<th>CCT (K)</th>
+<th>CRI</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>L1NS.DL|058</td>
+<td>1000X10X11</td>
+<td>24.0</td>
+<td>18.2</td>
+<td>3000K</td>
+<td>&gt;80</td>
+</tr>
+<tr>
+<td>L1NS.DL|063</td>
+<td>1000X14X14</td>
+<td>24.0</td>
+<td>18.2</td>
+<td>4000K</td>
+<td>&gt;80</td>
+</tr>
+<tr>
+<td>L1NS.DL|063</td>
+<td>1000X14X14</td>
+<td>24.0</td>
+<td>18.2</td>
+<td>6000K</td>
+<td>&gt;80</td>
+</tr>
+</tbody></table></div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-800">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SERIES 800 / TEXTILE DRAPERY ILLUMINATION</span>
+      <h2 class="menu-title"><span class="menu-code">800</span> Curtain Grazers</h2>
+      <p class="cat-sec-intro">Linear optical fittings tailored for ceiling curtain pelmets. Illuminates soft fabric folds uniformly from top hem to floor, with default Dim-to-Warm tuning for luxury residential hospitality.</p>
+    </div>
+
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 800.1: Curtain Grazer Matrix (Page 56)</div>
+<table class="bp-table">
+<thead><tr>
+<th>LUMINAIRE TYPE</th>
+<th>—</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>LINEAR LIGHT&lt;br&gt;[CURTAIN GRAZER]</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Single Height&lt;br&gt;9FT | 10FT | 12FT</td>
+<td>L1RS.3C|34</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Double Height</td>
+<td>L1RS.6C|34</td>
+</tr>
+</tbody></table></div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 800.2: Curtain Grazer Optical Dimensions &amp; CCT Performance (Page 60)</div>
+<table class="bp-table">
+<thead><tr>
+<th>Fitting Type</th>
+<th>Size (mm)</th>
+<th>Beam Angle</th>
+<th>Voltage (VDC)</th>
+<th>Power (W)</th>
+<th>CCT (K)</th>
+<th>CRI</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>L1RS.3C|034</td>
+<td>1000X16X12</td>
+<td>10º</td>
+<td>24.0</td>
+<td>15.2</td>
+<td>3000K</td>
+<td>&gt;80</td>
+</tr>
+<tr>
+<td>L1RS.3C|034</td>
+<td>1000X16X12</td>
+<td>30º</td>
+<td>24.0</td>
+<td>15.2</td>
+<td>4000K</td>
+<td>&gt;80</td>
+</tr>
+<tr>
+<td>L1RS.3C|034</td>
+<td>1000X16X12</td>
+<td>60º</td>
+<td>24.0</td>
+<td>15.2</td>
+<td>6000K</td>
+<td>&gt;80</td>
+</tr>
+</tbody></table></div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-900">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SERIES 900 / POWER &amp; AUTOMATION</span>
+      <h2 class="menu-title"><span class="menu-code">900</span> Control Gear &amp; Dimming Drivers</h2>
+      <p class="cat-sec-intro">Commercial and residential grade LED drivers engineered for zero-flicker dimming down to 0.1%. Fully compliant with international digital and analog dimming standards.</p>
+    </div>
+
+    <div class="cat-fixtures-row">
+      <div class="cat-fixture-card">
+        <img src="./product_guide_assets/fixtures/driver.jpg" alt="Remote Driver Pack 15W" class="cat-fixture-img" />
+        <div class="cat-fixture-info">
+          <h4>Remote Driver Pack 15W</h4>
+          <span class="cat-code">D0.0.106</span>
+          <p>Phase-cut TRIAC &amp; DALI-2 dimmable driver. High power factor >0.95, THD &lt;10%, SELV compliant.</p>
+          <div class="cat-spec-chips">
+            <span>15W</span><span>350mA / 500mA</span><span>TRIAC / DALI</span><span>SELV</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <section class="guest-section cat-section-block" id="cat-appendix">
+    <div class="cat-sec-header">
+      <span class="cat-sec-tag">SECTION 1000 / TECHNICAL APPENDIX</span>
+      <h2 class="menu-title"><span class="menu-code">1000</span> Technical Appendix &amp; Nomenclature Register</h2>
+      <p class="cat-sec-intro">Complete engineering register for ceiling aperture cutouts, IP ingress ratings, optical louvres, and official product nomenclature syntax.</p>
+    </div>
+
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 1000.1: Directional Luminaire Distributions &amp; Cutoffs (Page 63)</div>
+<table class="bp-table">
+<thead><tr>
+<th>—</th>
+<th>THUMBNAIL</th>
+<th>DESCRIPTION</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>DOWNLIGHT&lt;br&gt;DOWNLIGHT</td>
+<td>—</td>
+<td>&lt;br&gt;Lighting Tool:&lt;br&gt;Downlight&lt;br&gt;Lighting Distribution:&lt;br&gt;7º | 15º | 24º | 36º | 45º &lt;br&gt;Cutoff: 40º&lt;br&gt;&lt;br&gt;To highlight the table&lt;br&gt;To highlight individual objects/spaces on horizontal plane</td>
+</tr>
+<tr>
+<td>UPLIGHT&lt;br&gt;UPLIGHT</td>
+<td>—</td>
+<td>Lighting Tool:&lt;br&gt;Uplight&lt;br&gt;&lt;br&gt;To highlight architectural details and add drama to a space</td>
+</tr>
+<tr>
+<td>DIRECTIONAL&lt;br&gt;WALL HIGHLIGHTER</td>
+<td>—</td>
+<td>Lighting Tool:&lt;br&gt;Wall Highlighter&lt;br&gt;Lighting Distribution:&lt;br&gt;15º | 24º | 36º | ZOOM&lt;br&gt;Cutoff: 40º&lt;br&gt;&lt;br&gt;&lt;br&gt;To highlight artwork and paintings on wall&lt;br&gt;</td>
+</tr>
+<tr>
+<td>DIRECTIONAL&lt;br&gt;WALL WASHER</td>
+<td>—</td>
+<td>Lighting Tool:&lt;br&gt;Wall Washer&lt;br&gt;Lighting Distribution:&lt;br&gt;Asymmetrical&lt;br&gt;Cutoff: 80º&lt;br&gt;&lt;br&gt;To uniformly wash a feature wall&lt;br&gt;</td>
+</tr>
+</tbody></table></div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 1000.2: Linear Luminaires &amp; Optical Functions (Page 64)</div>
+<table class="bp-table">
+<thead><tr>
+<th>—</th>
+<th>THUMBNAIL</th>
+<th>DESCRIPTION</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>LINEAR LIGHT&lt;br&gt;TEXTURE GRAZER</td>
+<td>—</td>
+<td>Lighting Tool:&lt;br&gt;Texture Grazer &lt;br&gt;Lighting Distribution:&lt;br&gt;Narrow Spot&lt;br&gt;Cutoff: 30º&lt;br&gt;&lt;br&gt;To graze the texture by creating very sharp and thin shadows near the texture to add more depth&lt;br&gt;Requires very narrow beam of light&lt;br&gt;Especially good on natural surfaces like row stones and raw brick wall</td>
+</tr>
+<tr>
+<td>LINEAR LIGHT&lt;br&gt;COVE</td>
+<td>—</td>
+<td>Lighting Tool:&lt;br&gt;Linear Light (Cove)&lt;br&gt;&lt;br&gt;&lt;br&gt;Fill Light</td>
+</tr>
+<tr>
+<td>LINEAR LIGHT &lt;br&gt;CURTAIN GRAZER</td>
+<td>—</td>
+<td>Lighting Tool:&lt;br&gt;Curtain Grazer&lt;br&gt;&lt;br&gt;To highlight the curtain fabric</td>
+</tr>
+<tr>
+<td>LINEAR LIGHT &lt;br&gt;DIFFUSED</td>
+<td>—</td>
+<td>Lighting Tool:&lt;br&gt;Linear Light (Diffused)&lt;br&gt;Recessed | Surface | Suspension&lt;br&gt;&lt;br&gt;Fill Light</td>
+</tr>
+<tr>
+<td>DIMENSIONAL LIGHT&lt;br&gt;STRETCH CLOTH</td>
+<td>—</td>
+<td>Lighting Tool:&lt;br&gt;Stretch Cloth&lt;br&gt;&lt;br&gt;Fill Light</td>
+</tr>
+</tbody></table></div>
+    <div class="bp-table-wrap">
+<div class="bp-table-caption">Table 1000.3: IP Ingress Protection &amp; Environmental Classification (Page 65)</div>
+<table class="bp-table">
+<thead><tr>
+<th>—</th>
+<th>—</th>
+<th>—</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>INDOOR</td>
+<td>IP20&lt;br&gt;[Ordinary]</td>
+<td>An IP20 rating makes the LED light suitable for all indoor dry applications</td>
+</tr>
+<tr>
+<td>INDOOR</td>
+<td>IP40&lt;br&gt;[Not waterproof]</td>
+<td>An IP40 rating will prevent insects from getting into the lights, but there is no protection from moisture</td>
+</tr>
+<tr>
+<td>INDOOR</td>
+<td>IP42&lt;br&gt;[Drip Proof]</td>
+<td>IP42 rated LED lights are protected from tools and small wires greater than 1 millimetre. The lights can resist a few drops of water.</td>
+</tr>
+<tr>
+<td>INDOOR</td>
+<td>IP44 &lt;br&gt;[Splash Proof]</td>
+<td>IP44 rated lights are suitable for bathrooms and applications exposed to water spray.</td>
+</tr>
+<tr>
+<td>OUTDOOR</td>
+<td>IP54 &lt;br&gt;[Dust Proof, Splash Proof]</td>
+<td>IP54 lights offer protection against dust and splash, making them suitable for general outdoor use or damp indoor environments.</td>
+</tr>
+<tr>
+<td>OUTDOOR</td>
+<td>IP64 &lt;br&gt;[Dust Tight, Splash Proof]</td>
+<td>IP64 products are fully protected against dust ingress as well as water splashes from any direction.</td>
+</tr>
+<tr>
+<td>OUTDOOR</td>
+<td>IP65 &lt;br&gt;[Dust Tight, Jet Proof]</td>
+<td>An IP65 rating makes the product completely dust-tight with protection against low-pressure water jets from any direction.</td>
+</tr>
+<tr>
+<td>OUTDOOR</td>
+<td>IP66 &lt;br&gt;[Dust Tight, Watertight]</td>
+<td>IP66 means the product is completely dust-tight as well as protected against high pressure water jets from any direction.</td>
+</tr>
+<tr>
+<td>OUTDOOR</td>
+<td>IP67 &lt;br&gt;[Dust Tight, Watertight]</td>
+<td>An IP67 rated light is completely protected against solid particles, and can be submerged up to 1m in water for up to 30 minutes.</td>
+</tr>
+<tr>
+<td>OUTDOOR</td>
+<td>IP68 &lt;br&gt;[Dust Tight, Pressure Watertight]</td>
+<td>An IP68 fitting is hermetically sealed and suitable for continuous immersion in water.</td>
+</tr>
+</tbody></table></div>
+
+    <div class="cat-nomenclature-guide">
+      <div class="nom-header">Retina Master Nomenclature Syntax</div>
+      <div class="nom-formula">
+        <code>[FAMILY] [SIZE] [MOUNTING] [SHAPE] . [HEIGHT] [OPTIC] | [CODE]</code>
+      </div>
+      <div class="nom-example">
+        Example: <strong>D1CR.3S</strong> &rarr; 
+        <span><b>D</b> = Downlight</span> | 
+        <span><b>1</b> = Size 1 (Compact)</span> | 
+        <span><b>C</b> = Concealed Recessed</span> | 
+        <span><b>R</b> = Round Aperture</span> | 
+        <span><b>.3</b> = 3m Single Height</span> | 
+        <span><b>S</b> = Spot Optic (Narrow 15°–24°)</span>
+      </div>
+    </div>
+  </section>
+
+
+  <footer class="menu-footer cat-footer">
+    <p class="menu-legend">
+      <span>RETINA LIGHTING SYSTEMS · ARCHITECTURAL SPECIFICATION REGISTER</span>
+      <span>ALL RIGHTS RESERVED · DELHI · PRAYAGRAJ</span>
+    </p>
+    <p>Statutory testing certified under IS10322 / IEC 60598. Specifications subject to engineering refinement.</p>
+  </footer>
+</article>
+
+</div>
+</body>
+</html>

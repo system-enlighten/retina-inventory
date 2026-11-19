@@ -60,6 +60,30 @@ export default async function handler(req,res) {
     if(!employee) return res.status(403).json({error:'This Gmail account is not approved in Users sheet'});
     if(freshlyAuthenticated && sessionKey()) setCookie(res,signSession(email),14*86400);
     if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile?.name||email});
+    if(action==='productionLoad' || action==='productionSave') {
+      const role=String(employee.Role||employee.role||'').trim().toLowerCase();
+      const canWrite=['admin','store'].includes(role);
+      if(action==='productionSave' && !canWrite) return res.status(403).json({error:'Only Admin or Store users can update production.'});
+      const {RETINA_SCRIPT_URL:url, RETINA_SHARED_SECRET:secret}=process.env;
+      if(!url || !secret) return res.status(503).json({error:'Apps Script is not configured.'});
+      const payload={action,secret,email};
+      if(action==='productionSave') {
+        const {state,revision}=req.body;
+        if(!state || typeof state!=='object' || !Number.isSafeInteger(revision) || revision<0)
+          return res.status(400).json({error:'Invalid production save.'});
+        if(Buffer.byteLength(JSON.stringify(state),'utf8')>900000)
+          return res.status(413).json({error:'Production register exceeds the cloud storage limit.'});
+        Object.assign(payload,{state,revision});
+      }
+      const upstream=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),signal:AbortSignal.timeout(18000)});
+      let result;
+      try { result=await upstream.json(); } catch { throw Error('Apps Script did not return JSON.'); }
+      if(!result.ok) {
+        const code=result.conflict?409:400;
+        return res.status(code).json({error:result.error||'Production register request failed.'});
+      }
+      return res.json({...result,canWrite,canSeed:role==='admin',email});
+    }
     if(action==='catalog') {
       const [products,stock,...catalogs]=await Promise.all([
         readTab(sheets,spreadsheetId,'Products'),readTab(sheets,spreadsheetId,'Stock'),

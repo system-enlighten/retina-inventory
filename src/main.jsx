@@ -36,6 +36,6 @@ function App(){
  async function signOut(){try{await api('logout',{},'')}catch{}setUser(null);setToken('');setError('');window.google?.accounts.id.disableAutoSelect()}
  if(loading)return <div style={{fontFamily:'Arial',textAlign:'center',marginTop:140}}>Restoring your sign-in…</div>;
  if(!user)return <div style={{maxWidth:440,margin:'90px auto',padding:32,fontFamily:'Arial',background:'#fff',borderRadius:16}}><h1>Retina Inventory</h1><p>Sign in with your approved Gmail account.</p><div id="google-button"/><p style={{color:'firebrick'}}>{error}</p></div>;
- return <><div style={{padding:'8px 24px',background:'#e8f0ff',font:'13px Arial',display:'flex',justifyContent:'space-between'}}><span>Signed in: {user.email} · {user.role} | Cloud stock connected</span><button onClick={signOut}>Sign out</button></div><RetinaInventory cloud={{api,user}}/></>;
+ return <><div style={{padding:'8px 24px',background:'#e8f0ff',font:'13px Arial',display:'flex',justifyContent:'space-between'}}><span>Signed in: {user.email} · {user.role} | Cloud stock connected</span><span><a href="/production/index.html" style={{marginRight:16}}>Open Orders &amp; Production</a><button onClick={signOut}>Sign out</button></span></div><RetinaInventory cloud={{api,user}}/></>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
