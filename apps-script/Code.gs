@@ -461,7 +461,7 @@ function upsertBySku_(sheet, sku, values, required) {
  */
 function setupRetinaSheets() {
   var ss = getSpreadsheet_();
-  ensureSheet_(ss, 'Users', ['Employee Email', 'Role', 'Status']);
+  ensureSheet_(ss, 'Users', ['Employee Email', 'Role', 'Status', 'Department']);
   ensureSheet_(ss, 'Products', ['SKU', 'Product Name', 'Image URL', 'Status', 'Category']);
   ensureSheet_(ss, 'Housing', ['SKU', 'Product Name', 'Number', 'Image URL', 'Status', 'Details JSON']);
   ensureSheet_(ss, 'LED', ['SKU', 'Product Name', 'Number', 'Image URL', 'Status', 'Details JSON']);

@@ -1,6 +1,6 @@
 # Retina Inventory on Vercel and Google Apps Script
 
-The Vercel home opens **Orders & Production** after Google sign-in. The Retina workspace comes with workbenches, manufacturing job cards, BOMs, storage map, catalogue, Nomenclature fitting matrix and dispatch history.
+The Vercel home opens **Departments** after Google sign-in. The Retina workspace comes with workbenches, manufacturing job cards, BOMs, storage map, catalogue, Nomenclature fitting matrix and dispatch history.
 
 The production workspace writes to a separate **Retina Production Register** tab in the selected Google spreadsheet. The earlier Inventory screen is removed from navigation. Its product and stock sheets are retained separately. Production sample stock and dispatch deductions apply to the production register. Reconcile or migrate component balances and BOMs before using it for live warehouse stock.
 
@@ -16,7 +16,7 @@ The production workspace writes to a separate **Retina Production Register** tab
 
 1. Copy the contents of `frontend/` into the directory Vercel builds in your connected Git repository. If you keep the package folder structure in Git, set the Vercel root to `frontend`.
 2. Keep the existing environment variables. The required names are listed in `frontend/.env.example`. Use the same OAuth web client ID in `VITE_GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_ID`. The server uses the existing Google Sheets service account and active Users sheet for access. `RETINA_SESSION_SECRET` is optional when `RETINA_SHARED_SECRET` is set. Keep all secrets in Vercel environment variables.
-3. Deploy from Git. Open the Vercel domain and sign in. **Orders & Production** opens automatically at the site root. Older `/production/index.html` bookmarks redirect to the root.
+3. Deploy from Git. Open the Vercel domain and sign in. The department chooser opens at the site root. Older `/production/index.html` bookmarks redirect to the root.
 
 ## 3. Test the workflow
 
@@ -29,3 +29,13 @@ The production workspace starts empty on a fresh spreadsheet. The register is st
 ## If the register reports an unsupported backend action
 
 The Apps Script URL in `RETINA_SCRIPT_URL` must point to a deployed version of the web app that includes the production action branch in `Code.gs` and the `Production.gs` file. Saving Apps Script source alone does not publish it. Edit the deployment, create a new version, deploy it, then use **Reload production**.
+
+## Existing Housing, LED, and Driver catalogue
+
+The existing catalogue is loaded automatically in Orders & Production, Inventory, and BOM. The app reads the existing catalogue sheets and uses the included original catalogue snapshot if the live read fails. Inventory labels earlier balances as **Old stock**. To use a catalogue component in manufacturing, add it to the production stockroom, post the actual opening quantity, and include it in a luminaire BOM. Adding a component does not copy an opening quantity.
+
+## Departments
+
+Open **Departments** to choose Manufacturing Operations or switch to Sales & Distribution, Purchase & Supply Chain, Accounts, Marketing, Patent & Legal Team, or HR & Team Building. Sales opens the existing Catalogue and Dispatch Register, Purchase opens shared inventory and receiving, and Marketing opens the Catalogue. Billing, worldwide distribution workflows, accounting, patent/legal tracking and HR workflows require separate implementation.
+
+Add a **Department** column to the existing **Users** sheet. Set your own active user’s **Role** to **Admin** for access to all seven departments. For team members, enter the exact department name shown in the chooser. A blank or unrecognized assignment grants no department access. Non-admin production writes require the **Store** role and **Manufacturing Operations** assignment. Purchase has read-only production inventory access.

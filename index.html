@@ -426,18 +426,19 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 <style id="app-styles"></style>
 <div class="shell">
 <header class="app-chrome">
-<div class="meta"><span>Retina / Manufacturing operations</span><span id="header-date"></span></div>
-<div class="mast"><div><div class="wordmark">RETINA</div><div class="draft subtitle">Orders · Production · Stockroom</div></div><div class="stamp">Inventory system</div></div>
+<div class="meta"><span id="department-label">Retina / Manufacturing Operations</span><span id="header-date"></span></div>
+<div class="mast"><div><div class="wordmark">RETINA</div><div class="draft subtitle">Orders · Production · Stockroom</div></div><button class="btn department-switch" type="button" data-action="department-directory">Departments</button></div>
 <nav class="tabs" id="nav" aria-label="Register sections"></nav>
 <p id="notice" class="notice"></p>
 <div id="status" role="status"></div>
-<div class="row"><button class="btn mini" type="button" data-action="reload-production">Reload production</button><button class="btn mini" type="button" data-action="logout-production">Sign out</button></div>
+<div class="row"><button class="btn mini" type="button" data-action="reload-production">Reload</button><button class="btn mini" type="button" data-action="logout-production">Sign out</button></div>
 </header>
 <main id="screen"></main>
 <footer class="folio app-chrome"><span id="footer-brand">Retina Lighting / Operations & Assembly Register</span><span id="footer-sheet"></span></footer>
 </div>
 <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
 </div>
+<script src="/production/catalogue-data.js"></script>
 <script>
 function mountRegister(root) {
   const document = root.ownerDocument;
@@ -679,7 +680,7 @@ function mountRegister(root) {
       body: JSON.stringify({action, ...details})
     });
     const result = await response.json();
-    if (!response.ok || !result.ok) {
+    if (!response.ok || (action !== "catalog" && !result.ok)) {
       const error = Error(result.error || "Production request failed. Reload production to verify the latest saved records.");
       error.status = response.status;
       throw error;
@@ -691,7 +692,11 @@ function mountRegister(root) {
     if (saving || loadingProduction) throw Error("Wait for the current production request to finish.");
     loadingProduction = true;
     try {
-      const result = await productionRequest("productionLoad");
+      const [result, legacy] = await Promise.all([
+        productionRequest("productionLoad"),
+        productionRequest("catalog").catch(() => null)
+      ]);
+      legacyProducts = mergeLegacyCatalogue(legacy);
       db = result.state || newRegister(false);
       revision = result.revision;
       canWrite = result.canWrite;
@@ -699,7 +704,7 @@ function mountRegister(root) {
       loaded = true;
       if (!find(db.tables, selected)) selected = db.tables[0]?.id;
       render();
-      note(canWrite ? "Production register connected." : "Production register connected in view mode.");
+      note(legacy ? "Production register and existing catalogue connected." : "Production register connected. Showing the original catalogue snapshot.");
     } catch (error) {
       if (error.status === 401) {
         window.location.replace("/sign-in.html");
@@ -715,6 +720,16 @@ function mountRegister(root) {
   }
 
   const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings"];
+  const departments = [
+    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, manufacturing orders, component inventory and BOMs.", pages:[0,1,2,3,4,5,6]},
+    {id:"sales", name:"Sales & Distribution", scope:"Client billing, product catalogue and worldwide distribution.", pages:[3,5]},
+    {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing, receipts and inbound logistics.", pages:[1]},
+    {id:"accounts", name:"Accounts", scope:"Ledgers, payments, receivables and financial reporting.", pages:[]},
+    {id:"marketing", name:"Marketing", scope:"Product positioning, campaigns and brand materials.", pages:[3]},
+    {id:"legal", name:"Patent & Legal Team", scope:"Patents, intellectual property, contracts and legal matters.", pages:[]},
+    {id:"hr", name:"HR & Team Building", scope:"Recruitment, onboarding, training and team development.", pages:[]}
+  ];
+  let allowedDepartments = null, department = null, directoryOpen = true;
   let page = 0, selected = db.tables[0]?.id, filter = "All", storageFilter = "";
   const catalogState = { 0: { query: "", category: "" }, 1: { query: "", category: "" }, 2: { query: "", category: "" }, 3: { query: "", category: "" } };
   let capacityView = "configured";
@@ -859,6 +874,63 @@ function mountRegister(root) {
   }
 
   const divisions = ["Housing", "LED", "Driver", "Other"];
+
+  function catalogueImage(raw) {
+    const url = String(raw || "").trim();
+    if (!/^https?:\/\//i.test(url)) return "";
+    const match = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/);
+    return match ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w800` : url;
+  }
+
+  function mergeLegacyCatalogue(cloud) {
+    const index = new Map((cloud?.products || []).map(row => [String(row.SKU || "").trim().toUpperCase(), row]));
+    const stock = new Map((cloud?.stock || []).map(row => [String(row.SKU || "").trim().toUpperCase(), Number(row.Quantity)]));
+    return divisions.slice(0, 3).flatMap(group => {
+      const rows = new Map((window.retinaCatalogue?.[group] || []).map(row => [row.n, row]));
+      for (const row of cloud?.catalogs?.[group] || []) {
+        const sku = String(row.SKU || "").trim();
+        const explicit = row.Number || row["S#"] || row["S #"] || row["S.No"] || row["S No"];
+        const composite = sku.match(/^D(\d+)\.(\d+)\.(\d+)$/i);
+        const n = Number(explicit || (composite ? composite[divisions.indexOf(group)+1] : sku.match(/\d+/)?.[0]));
+        if (!Number.isSafeInteger(n) || n < 1) continue;
+        if (String(row.Status || "").trim().toLowerCase() === "archived") { rows.delete(n); continue; }
+        let details = {};
+        try { details = JSON.parse(row["Details JSON"] || "{}") || {}; } catch {}
+        const image = Object.entries(row).find(([heading]) => heading.replace(/[\s_-]/g, "").toLowerCase() === "imageurl")?.[1];
+        rows.set(n, {...rows.get(n), ...details, n,
+          ...(row["Product Name"] ? {[group === "Driver" ? "code" : "name"]:row["Product Name"]} : {}),
+          ...(image ? {img:image} : {}), sku});
+      }
+      return Array.from(rows.values(), row => {
+        const defaults = {Housing:`D.${row.n}`, LED:`D0.${row.n}.0`, Driver:`D0.0.${row.n}`};
+        const normal = {Housing:`D${row.n}.0.0`, LED:defaults.LED, Driver:defaults.Driver};
+        const aliases = [...new Set([row.sku, defaults[group], normal[group]].filter(Boolean).map(value => value.toUpperCase()))];
+        const product = aliases.map(sku => index.get(sku)).find(Boolean);
+        const balance = aliases.map(sku => stock.get(sku)).find(Number.isFinite);
+        const image = catalogueImage(row.img) || catalogueImage(product?.["Image URL"]);
+        const fields = [row.fam,row.beam,row.mount,row.ip,row.heat,row.dim,row.kind,row.w,row.volt,row.cct,row.make,row.mode,row.load,row.typo,row.cur];
+        return {id:`${group}-${row.n}`, code:row.sku || defaults[group], aliases, group, image, balance,
+          name:String(row.name || row.code || product?.["Product Name"] || `${group} ${row.n}`),
+          spec:fields.filter(Boolean).join(" · "), details:"legacy-details"};
+      });
+    });
+  }
+
+  let legacyProducts = mergeLegacyCatalogue(null);
+
+  function legacyCards(existing, inventoryView = false) {
+    const registered = new Set(db.ingredients.map(row => String(row.id).trim().toUpperCase()));
+    const shown = new Set(existing.map(row => `${row.group}|${String(row.code || "").trim().toUpperCase()}`));
+    return legacyProducts.filter(item => !item.aliases.some(sku => shown.has(`${item.group}|${sku}`)))
+      .map(item => {
+        const imported = item.aliases.some(sku => registered.has(sku));
+        return {...item, status:inventoryView && Number.isFinite(item.balance)
+          ? `Old stock · ${item.balance}` : "Existing catalogue",
+          action:inventoryView && canWrite && !imported
+            ? btn("Add to production stockroom","import-legacy-component",item.id)
+            : btn("View catalogue record","legacy-details",item.id) };
+      });
+  }
   const division = group => /driver|control gear/i.test(group) ? "Driver"
     : /led/i.test(group) ? "LED" : /housing|downlight|surface|spotlight|outdoor/i.test(group) ? "Housing" : "Other";
 
@@ -1168,7 +1240,7 @@ function mountRegister(root) {
 
     return heading("02 / Stockroom & Storage map", "Component inventory", "Track raw housings, LEDs, drivers, lenses, and hardware locations across named racks.", btn("+ Component", "ingredient") + " " + btn("+ Receive Purchase", "receive", "", "primary")) +
       stats([["Luminaires buildable", capacities.filter(c => c.portions > 0).length], ["Low-stock alerts", low], ["Total Batches", active.length], ["Components listed", db.ingredients.length]]) +
-      panel("02A", "Products", productCards(ingredients)) +
+      panel("02A", "Products", productCards([...ingredients, ...legacyCards(ingredients, true)])) +
       panel("02B", "Storage Map & Named Racks", storageMap(active)) +
       panel("02C", "Production Build Capacity", capacityCards(capacities)) +
       panel("02D", "Batch and Storage Location Register", `<p class="muted">Click any rack shelf above to isolate batches stored in that location.</p><div class="row">${Object.keys(lists).map(f => btn(f + " (" + lists[f].length + ")", "filter", f, f === filter ? "active mini" : "mini")).join("")}</div>` +
@@ -1196,7 +1268,7 @@ function mountRegister(root) {
       available.set(batch.ingredient, (available.get(batch.ingredient) || 0) + batch.left);
     }
     const capacity = new Map(dishCapacities(db.menu, available).map(entry => [entry.dish.id, entry.portions]));
-    return productCards(db.menu.map(dish => {
+    const production = db.menu.map(dish => {
       const count = capacity.get(dish.id) || 0;
       const hasBOM = Boolean(Object.keys(dish.recipe || {}).length);
       const specs = Object.values(dish.specs || {}).filter(Boolean).join(" · ");
@@ -1209,7 +1281,8 @@ function mountRegister(root) {
         action:ordering
           ? `<button type="button" class="btn primary" data-action="add" data-id="${esc(dish.id)}" ${enabled ? "" : "disabled"}>${!count ? "Unavailable" : !canOrder ? "Select a workbench" : "Add to bench"}</button>`
           : btn("Edit BOM","dish",dish.id) };
-    }));
+    });
+    return productCards([...production, ...legacyCards(production)]);
   }
 
   // Tab 03: BOM & Specifications
@@ -1383,30 +1456,78 @@ function mountRegister(root) {
       </div>`);
   }
 
+  async function loadDepartments() {
+    const response = await fetch("/api/inventory", {
+      method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"me"})
+    });
+    if (response.status === 401) {
+      window.location.replace("/sign-in.html");
+      return;
+    }
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error || "Unable to load departments.");
+    allowedDepartments = departments.filter(item => result.departments?.includes(item.id));
+    render();
+  }
+
+  function departmentDirectory() {
+    if (allowedDepartments === null) return `<p>Loading departments…</p>`;
+    if (!allowedDepartments.length) return `<h1>Departments</h1><p>Your account has no department assigned.</p>`;
+
+    return `<section class="department-directory">
+      <h1>Choose a department</h1>
+      <div class="department-grid">
+        ${allowedDepartments.map(item => `<button type="button" class="department-card" data-action="department-select" data-id="${item.id}">
+          <strong>${esc(item.name)}</strong><span>${esc(item.scope)}</span>
+        </button>`).join("")}
+      </div>
+    </section>`;
+  }
+
   // Render Engine
   function render() {
-    registerTitle = (db.name || "Retina Lighting") + " — " + pages[page];
+    registerTitle = (db.name || "Retina Lighting") + " — " + (directoryOpen ? "Departments" : department.name);
     document.title = registerTitle;
     $("header-date").textContent = new Intl.DateTimeFormat("en-IN", { dateStyle: "full" }).format(new Date());
     $("footer-brand").textContent = db.name + " / Operations & Assembly Register";
-    $("footer-sheet").textContent = "Sheet 0" + (page + 1) + " of 07 · " + pages[page];
+    $("department-label").textContent = "Retina / " + (directoryOpen ? "Departments" : department.name);
+    $("footer-sheet").textContent = directoryOpen ? "Departments" : department.name;
 
-    $("nav").innerHTML = pages.map((title, i) =>
+    $("nav").hidden = directoryOpen || !department?.pages.length;
+    $("nav").innerHTML = (department?.pages || []).map(i =>
       `<button type="button" class="tab" data-action="page" data-id="${i}" ${i === page ? 'aria-current="page"' : ""}>
-        ${esc(title)}</button>`).join("");
+        ${esc(pages[i])}</button>`).join("");
 
     const screen = $("screen");
-    if (!loaded) {
+    if (directoryOpen) {
+      screen.innerHTML = departmentDirectory();
+      return;
+    }
+    if (!department.pages.length) {
+      screen.innerHTML = heading("", department.name, department.scope)
+        + panel("", "Workspace", "<p>No workflow is connected to this department yet.</p>");
+      return;
+    }
+    const requiresRegister = page !== 3 && page !== 4;
+    if (department.id !== "manufacturing") {
+      screen.innerHTML = heading("", department.name, department.scope)
+        + (loaded || !requiresRegister ? "" : panel("", "Connection", `<p>${btn("Retry connection","reload-production")}</p>`));
+      if (!loaded && requiresRegister) return;
+    } else {
+      screen.innerHTML = "";
+    }
+    if (!loaded && requiresRegister) {
       screen.innerHTML = panel("Production", "Connect to the production register to continue.", `<p>${btn("Retry connection","reload-production")} </p>`);
       return;
     }
-    if(page === 0) screen.innerHTML = dining();
-    else if(page === 1) screen.innerHTML = inventory();
-    else if(page === 2) screen.innerHTML = recipes();
-    else if(page === 3) screen.innerHTML = catalogue();
-    else if(page === 4) screen.innerHTML = nomenclature();
-    else if(page === 5) screen.innerHTML = sales();
-    else if(page === 6) screen.innerHTML = settings();
+    if(page === 0) screen.insertAdjacentHTML("beforeend", dining());
+    else if(page === 1) screen.insertAdjacentHTML("beforeend", inventory());
+    else if(page === 2) screen.insertAdjacentHTML("beforeend", recipes());
+    else if(page === 3) screen.insertAdjacentHTML("beforeend", catalogue());
+    else if(page === 4) screen.insertAdjacentHTML("beforeend", nomenclature());
+    else if(page === 5) screen.insertAdjacentHTML("beforeend", sales());
+    else if(page === 6) screen.insertAdjacentHTML("beforeend", settings());
     if (page <= 2) applyCatalogFilter();
   }
 
@@ -1425,7 +1546,29 @@ function mountRegister(root) {
 
   // Actions Dispatcher
   const actions = {
-    page: id => { page = Number(id); render(); },
+    "department-directory": () => {
+      directoryOpen = !department || !directoryOpen;
+      render();
+      if (directoryOpen) $("screen").querySelector(".department-card")?.focus();
+    },
+    "department-select": id => {
+      const next = find(allowedDepartments || [], id);
+      if (!next) return;
+      department = next;
+      page = department.pages[0] ?? -1;
+      directoryOpen = false;
+      render();
+      root.querySelector(".department-switch")?.focus();
+      if (!loaded && department.pages.some(i => [0,1,2,5,6].includes(i))) {
+        loadProduction().catch(error => note(error.message));
+      }
+    },
+    page: id => {
+      const next = Number(id);
+      if (!department?.pages.includes(next)) return;
+      page = next;
+      render();
+    },
     select: id => { selected = id; render(); },
     close: () => { $("dialog").close(); },
     filter: f => { filter = f; render(); },
@@ -1436,6 +1579,26 @@ function mountRegister(root) {
       applyCatalogFilter();
     },
 
+    "legacy-details": id => {
+      const item = find(legacyProducts, id);
+      if (!item) return;
+      modal(item.name, `<p><b>${esc(item.code)}</b> · ${esc(item.group)}</p><p>${esc(item.spec)}</p>
+        ${Number.isFinite(item.balance) ? `<p>Existing inventory balance: ${esc(item.balance)}</p>` : ""}
+        <p>To use this component in a workbench order, add it to the production stockroom and include it in a luminaire BOM.</p>`);
+    },
+    "import-legacy-component": id => {
+      const item = find(legacyProducts, id);
+      if (!item) return;
+      modal("Add catalogue component", `<p>${esc(item.name)} · ${esc(item.code)}</p>
+        <p>Add the component to the production stockroom with zero opening quantity.</p>`,
+        () => update(d => {
+          if (d.ingredients.some(row => item.aliases.includes(String(row.id).trim().toUpperCase()))) {
+            throw Error("This component is already in the production stockroom.");
+          }
+          d.ingredients.push({id:item.code,name:item.name,group:item.group === "LED" ? "LED Module" : item.group,
+            image:item.image,unit:"piece",min:0,life:365});
+        }),"Add component");
+    },
     "component-details": id => {
       const item = find(db.ingredients, id);
       if (!item) return;
@@ -1757,7 +1920,7 @@ function mountRegister(root) {
 
     "print-menu": () => { window.print(); },
 
-    "reload-production": () => loadProduction(),
+    "reload-production": () => department ? loadProduction() : loadDepartments(),
     "logout-production": async () => {
       const response = await fetch("/api/inventory", {
         method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
@@ -1936,7 +2099,7 @@ function mountRegister(root) {
   });
 
   render();
-  loadProduction().catch(error => note(error.message));
+  loadDepartments().catch(error => note(error.message));
 
   return () => {
     controller.abort();
@@ -2513,6 +2676,16 @@ const styles = `
 :where(.retina-inventory-pos) .matrix-code{border:0;background:none;color:inherit;padding:2px;font-weight:inherit}
 :where(.retina-inventory-pos) .matrix-code:hover{text-decoration:underline;color:var(--rust)}
 
+/* Departments */
+#nav[hidden]{display:none}
+.department-switch{border-color:var(--rust)!important;color:var(--rust)!important;text-transform:uppercase;font:700 11px var(--mono)!important;letter-spacing:.08em}
+.department-directory{padding:18px 0}
+.department-directory h1{font:400 clamp(32px,4.5vw,52px)/1 var(--serif);margin:4px 0 16px}
+.department-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:12px}
+.department-card{display:grid;gap:8px;text-align:left;align-content:start;min-height:105px;border:1px solid var(--rule);background:var(--white);color:var(--ink);padding:15px}
+.department-card strong{font:700 19px var(--serif)}
+.department-card span{font-size:13px;color:var(--muted)}
+.department-card:hover{border-color:var(--rust);background:var(--paper)}
 /* Products */
 .product-browser{display:grid;grid-template-columns:125px minmax(0,1fr);gap:12px}
 .product-division{display:flex;flex-direction:column;gap:5px}

@@ -24,6 +24,25 @@ function setCookie(res,value,maxAge) {
   res.setHeader('Set-Cookie',`${cookieName}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`);
 }
 const CATALOG_TABS = ['Housing','LED','Driver'];
+const DEPARTMENT_NAMES = {
+  manufacturing: 'Manufacturing Operations',
+  sales: 'Sales & Distribution',
+  purchase: 'Purchase & Supply Chain',
+  accounts: 'Accounts',
+  marketing: 'Marketing',
+  legal: 'Patent & Legal Team',
+  hr: 'HR & Team Building'
+};
+function normalizeDepartment(value) {
+  return String(value || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function accessFor(employee) {
+  const role = String(employee.Role || employee.role || 'Employee').trim().toLowerCase();
+  const assigned = normalizeDepartment(employee.Department || employee.department);
+  const department = Object.entries(DEPARTMENT_NAMES).find(([id, name]) =>
+    assigned && [id, normalizeDepartment(name), normalizeDepartment(name + ' Department')].includes(assigned))?.[0];
+  return {role, admin:role==='admin', departments:role==='admin' ? Object.keys(DEPARTMENT_NAMES) : department ? [department] : []};
+}
 function rows(values=[]) {
   const [header=[], ...data] = values;
   return data.filter(r=>r.some(v=>String(v??'').trim())).map(r=>Object.fromEntries(header.map((h,i)=>[String(h).trim(),r[i]??''])));
@@ -59,11 +78,16 @@ export default async function handler(req,res) {
     const employee=users.find(u=>String(u['Employee Email']||u.Email||u.email||'').toLowerCase()===email && String(u.Status||u.status||'').toLowerCase()==='active');
     if(!employee) return res.status(403).json({error:'This Gmail account is not approved in Users sheet'});
     if(freshlyAuthenticated && sessionKey()) setCookie(res,signSession(email),14*86400);
-    if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile?.name||email});
+    const access=accessFor(employee);
+    const canSee=id=>access.departments.includes(id);
+    if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile?.name||email,departments:access.departments});
     if(action==='productionLoad' || action==='productionSave') {
-      const role=String(employee.Role||employee.role||'').trim().toLowerCase();
-      const canWrite=['admin','store'].includes(role);
-      if(action==='productionSave' && !canWrite) return res.status(403).json({error:'Only Admin or Store users can update production.'});
+      const manufacturing=canSee('manufacturing');
+      const purchasing=canSee('purchase');
+      const sales=canSee('sales');
+      const canWrite=access.admin || (manufacturing && access.role==='store');
+      if(!manufacturing && !purchasing && !sales) return res.status(403).json({error:'This department has no production register access.'});
+      if(action==='productionSave' && !canWrite) return res.status(403).json({error:'Only Admin or Manufacturing Store users can update production.'});
       const {RETINA_SCRIPT_URL:url, RETINA_SHARED_SECRET:secret}=process.env;
       if(!url || !secret) return res.status(503).json({error:'Apps Script is not configured.'});
       const payload={action,secret,email};
@@ -82,9 +106,16 @@ export default async function handler(req,res) {
         const code=result.conflict?409:400;
         return res.status(code).json({error:result.error||'Production register request failed.'});
       }
-      return res.json({...result,canWrite,canSeed:role==='admin',email});
+      if(result.state && !manufacturing) {
+        const d=result.state;
+        const stockView=purchasing ? {ingredients:d.ingredients,batches:d.batches,activity:d.activity} : {};
+        const salesView=sales ? {sales:d.sales} : {};
+        result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
+      }
+      return res.json({...result,canWrite,canSeed:access.admin,email});
     }
     if(action==='catalog') {
+      if(!canSee('manufacturing') && !canSee('purchase')) return res.status(403).json({error:'Catalogue stock access is restricted to Manufacturing or Purchase.'});
       const [products,stock,...catalogs]=await Promise.all([
         readTab(sheets,spreadsheetId,'Products'),readTab(sheets,spreadsheetId,'Stock'),
         ...CATALOG_TABS.map(async name => { try { return await readTab(sheets,spreadsheetId,name); } catch(e) { if(e?.code===400 || e?.response?.status===400) return []; throw e; } })
@@ -121,8 +152,8 @@ export default async function handler(req,res) {
     if(action==='move') {
       const type=String(req.body.type||'').toUpperCase();
       const role=String(employee.Role||employee.role||'Employee').toLowerCase();
-      if(type==='IN'&&!['admin','purchase','store'].includes(role)) return res.status(403).json({error:'You cannot check in'});
-      if(type==='OUT'&&!['admin','store'].includes(role)) return res.status(403).json({error:'You cannot check out'});
+      if(type==='IN'&&(!canSee('manufacturing')&&!canSee('purchase') || !['admin','purchase','store'].includes(role))) return res.status(403).json({error:'You cannot check in'});
+      if(type==='OUT'&&(!canSee('manufacturing') || !['admin','store'].includes(role))) return res.status(403).json({error:'You cannot check out'});
       if(!['IN','OUT'].includes(type)) return res.status(400).json({error:'Invalid movement type'});
       const items=req.body.items;
       if(!Array.isArray(items)||!items.length||items.length>100) return res.status(400).json({error:'Invalid cart'});
