@@ -22,7 +22,7 @@ function App(){
   let cancelled=false;
   const render=()=>{
    if(cancelled||!document.getElementById('google-button'))return;
-   window.google.accounts.id.initialize({client_id:clientId,callback:async ({credential})=>{
+   window.google.accounts.id.initialize({client_id:clientId,auto_select:false,callback:async ({credential})=>{
     try{const u=await api('me',{},credential);setUser(u);setError('')}
     catch(e){setError(e.message);setUser(null)}
    }});

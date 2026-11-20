@@ -426,6 +426,9 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 </head><body>
 <div id="app" class="retina-inventory-pos">
 <style id="app-styles"></style>
+<div class="retina-account-bar app-chrome">
+  <button type="button" data-action="logout-production">Sign out / switch account</button>
+</div>
 <div class="shell">
 <header class="app-chrome">
 <div class="meta"><span id="department-label">Retina / Manufacturing Operations</span><span id="header-date"></span></div>
@@ -433,7 +436,6 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 <nav class="tabs" id="nav" aria-label="Register sections"></nav>
 <p id="notice" class="notice"></p>
 <div id="status" role="status"></div>
-<div class="row"><button class="btn mini" type="button" data-action="reload-production">Reload</button><button class="btn mini" type="button" data-action="logout-production">Sign out</button></div>
 </header>
 <main id="screen"></main>
 <footer class="folio app-chrome"><span id="footer-brand">Retina Lighting / Operations & Assembly Register</span><span id="footer-sheet"></span></footer>
@@ -2683,6 +2685,12 @@ const styles = `
 :where(.retina-inventory-pos) .fitting-matrix img{display:block;width:100%;object-fit:contain;margin:auto}
 :where(.retina-inventory-pos) .matrix-code{border:0;background:none;color:inherit;padding:2px;font-weight:inherit}
 :where(.retina-inventory-pos) .matrix-code:hover{text-decoration:underline;color:var(--rust)}
+
+/* Account bar */
+.retina-account-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:flex-end;min-height:40px;padding:6px clamp(10px,2vw,18px);background:#0d1c30}
+.retina-account-bar button{border:1px solid #7595b9;border-radius:0;background:#fff;color:#254c7c;padding:4px 8px;font:600 11px/1.35 var(--mono)}
+.retina-account-bar button:focus-visible{outline:2px solid #fff;outline-offset:3px}
+@media print{.retina-account-bar{display:none!important}}
 
 /* Departments */
 #nav[hidden]{display:none}
