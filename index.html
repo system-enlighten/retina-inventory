@@ -721,13 +721,13 @@ function mountRegister(root) {
 
   const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings"];
   const departments = [
-    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, manufacturing orders, component inventory and BOMs.", pages:[0,1,2,3,4,5,6]},
-    {id:"sales", name:"Sales & Distribution", scope:"Client billing, product catalogue and worldwide distribution.", pages:[3,5]},
-    {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing, receipts and inbound logistics.", pages:[1]},
-    {id:"accounts", name:"Accounts", scope:"Ledgers, payments, receivables and financial reporting.", pages:[]},
-    {id:"marketing", name:"Marketing", scope:"Product positioning, campaigns and brand materials.", pages:[3]},
-    {id:"legal", name:"Patent & Legal Team", scope:"Patents, intellectual property, contracts and legal matters.", pages:[]},
-    {id:"hr", name:"HR & Team Building", scope:"Recruitment, onboarding, training and team development.", pages:[]}
+    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
+    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[3,5]},
+    {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
+    {id:"accounts", name:"Accounts", scope:"Ledger, payments and reporting", pages:[]},
+    {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
+    {id:"legal", name:"Patent & Legal Team", scope:"Patents, IP and contracts", pages:[]},
+    {id:"hr", name:"HR & Team Building", scope:"Recruitment, onboarding and training", pages:[]}
   ];
   let allowedDepartments = null, department = null, directoryOpen = true;
   let page = 0, selected = db.tables[0]?.id, filter = "All", storageFilter = "";
@@ -875,10 +875,12 @@ function mountRegister(root) {
 
   const divisions = ["Housing", "LED", "Driver", "Other"];
 
+  const localThumbnails = {"Housing-1":"/production/catalogue-thumbnails/Housing-1.png","Housing-2":"/production/catalogue-thumbnails/Housing-2.png","Housing-3":"/production/catalogue-thumbnails/Housing-3.png","Housing-4":"/production/catalogue-thumbnails/Housing-4.png","Housing-5":"/production/catalogue-thumbnails/Housing-5.png","Housing-6":"/production/catalogue-thumbnails/Housing-6.png","Housing-7":"/production/catalogue-thumbnails/Housing-7.png","Housing-8":"/production/catalogue-thumbnails/Housing-8.png","Housing-9":"/production/catalogue-thumbnails/Housing-9.png","Housing-10":"/production/catalogue-thumbnails/Housing-10.png","Housing-11":"/production/catalogue-thumbnails/Housing-11.png","Housing-12":"/production/catalogue-thumbnails/Housing-12.png","Housing-14":"/production/catalogue-thumbnails/Housing-14.jpg","Housing-15":"/production/catalogue-thumbnails/Housing-15.png","Housing-16":"/production/catalogue-thumbnails/Housing-16.png","Housing-17":"/production/catalogue-thumbnails/Housing-17.png","Housing-18":"/production/catalogue-thumbnails/Housing-18.png","Housing-19":"/production/catalogue-thumbnails/Housing-19.png","Housing-20":"/production/catalogue-thumbnails/Housing-20.png","Housing-21":"/production/catalogue-thumbnails/Housing-21.png","Housing-22":"/production/catalogue-thumbnails/Housing-22.png","Housing-23":"/production/catalogue-thumbnails/Housing-23.png","Housing-24":"/production/catalogue-thumbnails/Housing-24.jpg","Housing-25":"/production/catalogue-thumbnails/Housing-25.png","Housing-26":"/production/catalogue-thumbnails/Housing-26.png","Housing-27":"/production/catalogue-thumbnails/Housing-27.jpg","Housing-28":"/production/catalogue-thumbnails/Housing-28.jpg","Housing-29":"/production/catalogue-thumbnails/Housing-29.jpg","Housing-30":"/production/catalogue-thumbnails/Housing-30.jpg","Housing-31":"/production/catalogue-thumbnails/Housing-31.jpg","Housing-32":"/production/catalogue-thumbnails/Housing-32.png","Housing-51":"/production/catalogue-thumbnails/Housing-51.jpg","Housing-52":"/production/catalogue-thumbnails/Housing-52.png","Housing-53":"/production/catalogue-thumbnails/Housing-53.png","Housing-54":"/production/catalogue-thumbnails/Housing-54.png","Housing-55":"/production/catalogue-thumbnails/Housing-55.png","Housing-56":"/production/catalogue-thumbnails/Housing-56.png","Housing-57":"/production/catalogue-thumbnails/Housing-57.png","Housing-58":"/production/catalogue-thumbnails/Housing-58.png","Housing-59":"/production/catalogue-thumbnails/Housing-59.png","Housing-60":"/production/catalogue-thumbnails/Housing-60.png","Housing-61":"/production/catalogue-thumbnails/Housing-61.jpg","Housing-62":"/production/catalogue-thumbnails/Housing-62.jpg","Housing-63":"/production/catalogue-thumbnails/Housing-63.png","Housing-64":"/production/catalogue-thumbnails/Housing-64.png"};
   function catalogueImage(raw) {
     const url = String(raw || "").trim();
     if (!/^https?:\/\//i.test(url)) return "";
-    const match = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/);
+    const match = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/)
+      || url.match(/drive\.google\.com\/(?:uc|open|thumbnail)\?[^#]*?\bid=([\w-]+)/);
     return match ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w800` : url;
   }
 
@@ -907,7 +909,7 @@ function mountRegister(root) {
         const aliases = [...new Set([row.sku, defaults[group], normal[group]].filter(Boolean).map(value => value.toUpperCase()))];
         const product = aliases.map(sku => index.get(sku)).find(Boolean);
         const balance = aliases.map(sku => stock.get(sku)).find(Number.isFinite);
-        const image = catalogueImage(row.img) || catalogueImage(product?.["Image URL"]);
+        const image = localThumbnails[`${group}-${row.n}`] || catalogueImage(row.img) || catalogueImage(product?.["Image URL"]);
         const fields = [row.fam,row.beam,row.mount,row.ip,row.heat,row.dim,row.kind,row.w,row.volt,row.cct,row.make,row.mode,row.load,row.typo,row.cur];
         return {id:`${group}-${row.n}`, code:row.sku || defaults[group], aliases, group, image, balance,
           name:String(row.name || row.code || product?.["Product Name"] || `${group} ${row.n}`),
@@ -941,7 +943,7 @@ function mountRegister(root) {
     const buttons = ["", ...categories].map(group => {
       const count = group ? items.filter(item => item.group === group).length : items.length;
       return `<button type="button" class="btn category-choice" data-action="catalog-category" data-id="${esc(group)}"
-        aria-pressed="${group === state.category}">${esc(group || "All products")} <small>${count}</small></button>`;
+        aria-pressed="${group === state.category}">${catalogueIcon(group)}<span>${esc(group || "All products")}</span><small>${count}</small></button>`;
     }).join("");
     return `<div class="product-browser">
       <div class="product-division" role="group" aria-label="Product divisions">${buttons}</div>
@@ -951,14 +953,18 @@ function mountRegister(root) {
     </div>`;
   }
 
+  function catalogueIcon(group) {
+    return symbol(({Housing:"downlight",LED:"led",Driver:"driver",Other:"optics"})[group] || "stock");
+  }
+
   function playcard(item) {
     const search = [item.name, item.code, item.spec, item.group].filter(Boolean).join(" ");
     const image = item.image?.startsWith("./product_guide_assets/")
       ? "/production/" + item.image.slice(2) : item.image;
     return `<article class="playcard" data-catalog-name="${esc(search)}" data-catalog-group="${esc(item.group)}">
-      <div class="playcard-image">${image
-        ? `<img src="${esc(image)}" alt="${esc(item.name)}" loading="lazy" decoding="async">`
-        : `<span class="draft">${esc(item.group)}</span>`}
+      <div class="playcard-image">
+        <span class="playcard-placeholder" aria-hidden="true">${catalogueIcon(item.group)}</span>
+        ${image ? `<img src="${esc(image)}" alt="${esc(item.name)}" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ""}
         <span class="tag ${item.warn ? "warn" : ""}">${esc(item.status)}</span>
       </div>
       <div class="playcard-copy"><h3>${esc(item.name)}</h3><small>${esc(item.code)}</small>
@@ -973,12 +979,21 @@ function mountRegister(root) {
     const state = catalogState[page], screen = $("screen");
     if(!state || !$("catalog-empty")) return;
     const query = state.query.trim().toLowerCase(), visibleGroups = new Set();
+    let visible = 0;
     for(const card of screen.querySelectorAll("[data-catalog-name]")) {
       const group = card.dataset.catalogGroup;
       const show = (!state.category || group === state.category) &&
         (card.dataset.catalogName + " " + group).toLowerCase().includes(query);
       card.hidden = !show;
-      if(show) visibleGroups.add(group);
+      if(show) {
+        visibleGroups.add(group);
+        const image = card.querySelector("img");
+        if (image && visible < 12) {
+          image.loading = "eager";
+          if (visible < 4) image.fetchPriority = "high";
+        }
+        visible++;
+      }
     }
     for(const section of screen.querySelectorAll("[data-catalog-section]"))
       section.hidden = !visibleGroups.has(section.dataset.catalogSection);
@@ -1471,6 +1486,19 @@ function mountRegister(root) {
     render();
   }
 
+  const departmentIcons = {
+    manufacturing:'M3 39V18l15-8v12l14-8v8h23v17H3m36-17V5h8v17M11 31h7m8 0h7m8 0h7',
+    sales:'M4 26h32V12H4v14zm32-9h12l8 9v9H4v-9m15 9h18m6-12h8M12 35a4 4 0 1 0 8 0 4 4 0 1 0-8 0m27 0a4 4 0 1 0 8 0 4 4 0 1 0-8 0',
+    purchase:'M7 13 29 4l22 9v20l-22 9-22-9V13zm0 0 22 9 22-9M29 22v20M18 8l22 9v9',
+    accounts:'M6 39h48M12 33V22h8v11m7 0V9h8v24m7 0V16h8v17',
+    marketing:'M7 18h15l22-10v29L22 27H7v-9zm8 9 4 12h8l-5-12M50 14l6-4m-6 12h7m-7 8 6 4',
+    legal:'M30 5v33M17 39h26M10 13h40M14 13 6 29h16l-8-16zm32 0-8 16h16l-8-16z',
+    hr:'M22 15a8 8 0 1 0 16 0 8 8 0 1 0-16 0M15 39v-4a15 15 0 0 1 30 0v4M5 39v-4a11 11 0 0 1 12-11m38 15v-4a11 11 0 0 0-12-11'
+  };
+  function departmentIcon(id) {
+    return `<svg width="48" height="36" viewBox="0 0 60 44" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="${departmentIcons[id]}"/></svg>`;
+  }
+
   function departmentDirectory() {
     if (allowedDepartments === null) return `<p>Loading departments…</p>`;
     if (!allowedDepartments.length) return `<h1>Departments</h1><p>Your account has no department assigned.</p>`;
@@ -1479,7 +1507,8 @@ function mountRegister(root) {
       <h1>Choose a department</h1>
       <div class="department-grid">
         ${allowedDepartments.map(item => `<button type="button" class="department-card" data-action="department-select" data-id="${item.id}">
-          <strong>${esc(item.name)}</strong><span>${esc(item.scope)}</span>
+          <span class="department-card-top">${departmentIcon(item.id)}<span aria-hidden="true">↗</span></span>
+          <strong>${esc(item.name)}</strong><small>${esc(item.scope)}</small>
         </button>`).join("")}
       </div>
     </section>`;
@@ -2086,6 +2115,10 @@ function mountRegister(root) {
     }
   });
 
+  root.addEventListener("error", event => {
+    if (event.target.matches?.(".playcard-image img")) event.target.hidden = true;
+  }, {capture:true, signal:controller.signal});
+
   listen(root, "click", async event => {
     const button = event.target.closest("[data-action]");
     if(!button) return;
@@ -2682,20 +2715,25 @@ const styles = `
 .department-directory{padding:18px 0}
 .department-directory h1{font:400 clamp(32px,4.5vw,52px)/1 var(--serif);margin:4px 0 16px}
 .department-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:12px}
-.department-card{display:grid;gap:8px;text-align:left;align-content:start;min-height:105px;border:1px solid var(--rule);background:var(--white);color:var(--ink);padding:15px}
+.department-card{display:grid;gap:8px;text-align:left;align-content:start;min-height:105px;border:1px solid var(--rule);background:var(--white);color:var(--ink);padding:15px;border-top:2px solid var(--ink)}
 .department-card strong{font:700 19px var(--serif)}
-.department-card span{font-size:13px;color:var(--muted)}
+.department-card small{font-size:13px;color:var(--muted)}
+.department-card-top{display:flex;justify-content:space-between;align-items:start;color:var(--rust)}
 .department-card:hover{border-color:var(--rust);background:var(--paper)}
 /* Products */
-.product-browser{display:grid;grid-template-columns:125px minmax(0,1fr);gap:12px}
-.product-division{display:flex;flex-direction:column;gap:5px}
-.product-division .btn{display:flex;justify-content:space-between;text-align:left}
+.product-browser{display:grid;gap:10px}
+.product-division{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,132px),1fr));gap:6px}
+.product-division .btn{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:7px;text-align:left}
+.product-division .symbol{width:17px;height:17px;color:var(--rust)}
+.product-division .btn[aria-pressed="true"] .symbol{color:#efc8ab}
 .product-division .btn[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
 .product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,175px),1fr));gap:10px;margin-top:10px}
 .playcard{display:flex;flex-direction:column;gap:8px;border:1px solid var(--rule);background:var(--white);padding:8px;min-width:0}
 .playcard[hidden]{display:none}
 .playcard-image{position:relative;display:grid;place-items:center;aspect-ratio:1.45;background:var(--blue);overflow:hidden}
-.playcard-image img{width:100%;height:100%;min-height:0;object-fit:contain}
+.playcard-image img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--blue)}
+.playcard-image img[hidden]{display:none}
+.playcard-placeholder .symbol{width:42px;height:42px;color:var(--muted);opacity:.6}
 .playcard-image .tag{position:absolute;bottom:4px;left:4px;background:var(--white);color:var(--ink);padding:2px 4px;letter-spacing:.04em}
 .playcard-image .warn{color:var(--rust)}
 .playcard-copy h3{margin:0;font:700 15px/1.25 var(--serif)}
@@ -2706,7 +2744,7 @@ const styles = `
 .playcard>.btn{width:100%}
 .station-icon{display:block;margin:3px auto 6px;color:var(--rust)}
 .floor-tile.active .station-icon{color:var(--paper)}
-@media(max-width:650px){.product-browser{grid-template-columns:1fr}.product-division{flex-direction:row;flex-wrap:wrap}.product-division .btn{gap:6px}}
+
 /* Responsive */
 @media(max-width:700px){
   :where(.retina-inventory-pos) .shell{width:calc(100% - 16px);margin:8px auto;padding:11px 10px 0}
