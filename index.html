@@ -725,10 +725,10 @@ function mountRegister(root) {
 
   const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings"];
   const departments = [
+    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
     {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[3,5]},
     {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
-    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
     {id:"accounts", name:"Accounts", scope:"Ledger, payments and reporting", pages:[]},
     {id:"legal", name:"Patent & Legal Team", scope:"Patents, IP and contracts", pages:[]},
     {id:"hr", name:"HR & Team Building", scope:"Recruitment, onboarding and training", pages:[]}
