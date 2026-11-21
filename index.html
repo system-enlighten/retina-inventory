@@ -675,7 +675,8 @@ function mountRegister(root) {
     return d;
   }
 
-  let db = newRegister(false), revision = 0, loaded = false, canWrite = false, canSeed = false, saving = false, loadingProduction = false;
+  let db = newRegister(false), revision = 0, loaded = false, canWrite = false, canSeed = false, saving = false;
+  let productionLoad = null, catalogueLoad = null, departmentError = "";
 
   async function productionRequest(action, details = {}) {
     const response = await fetch("/api/inventory", {
@@ -692,24 +693,28 @@ function mountRegister(root) {
     return result;
   }
 
-  async function loadProduction() {
-    if (saving || loadingProduction) throw Error("Wait for the current production request to finish.");
-    loadingProduction = true;
-    try {
-      const [result, legacy] = await Promise.all([
-        productionRequest("productionLoad"),
-        productionRequest("catalog").catch(() => null)
-      ]);
+  function loadLegacyCatalogue() {
+    return catalogueLoad ??= productionRequest("catalog").then(legacy => {
       legacyProducts = mergeLegacyCatalogue(legacy);
+      if (loaded && !directoryOpen && [0, 1, 2].includes(page)) render();
+    }).catch(() => {
+      // The bundled catalogue remains available if the live catalogue is offline.
+    }).finally(() => { catalogueLoad = null; });
+  }
+
+  function loadProduction() {
+    if (productionLoad) return productionLoad;
+    if (saving) return Promise.resolve();
+    const request = productionRequest("productionLoad");
+    loadLegacyCatalogue();
+    productionLoad = request.then(result => {
       db = result.state || newRegister(false);
       revision = result.revision;
       canWrite = result.canWrite;
       canSeed = result.canSeed;
       loaded = true;
       if (!find(db.tables, selected)) selected = db.tables[0]?.id;
-      render();
-      if (!directoryOpen) note(legacy ? "Production register and existing catalogue connected." : "Production register connected. Showing the original catalogue snapshot.");
-    } catch (error) {
+    }).catch(error => {
       if (error.status === 401) {
         window.location.replace("/sign-in.html");
         return;
@@ -718,9 +723,15 @@ function mountRegister(root) {
         throw Error("The connected Apps Script version needs the production update. Deploy the new version from START_HERE.md, then retry.");
       }
       throw error;
-    } finally {
-      loadingProduction = false;
+    }).finally(() => {
+      productionLoad = null;
+      if (!directoryOpen) render();
+    });
+    if (!directoryOpen && !loaded) {
+      note("");
+      render();
     }
+    return productionLoad;
   }
 
   const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings"];
@@ -757,7 +768,7 @@ function mountRegister(root) {
   async function update(mutate) {
     if (!loaded) throw Error("Connect to the production register first.");
     if (!canWrite) throw Error("Your account has view-only access to production.");
-    if (saving || loadingProduction) throw Error("Wait for the current production request to finish.");
+    if (saving || productionLoad) throw Error("Production is syncing. Try saving again shortly.");
     const next = structuredClone(db);
     mutate(next);
     saving = true;
@@ -1496,6 +1507,24 @@ function mountRegister(root) {
     if (!response.ok) throw Error(result.error || "Unable to load departments.");
     allowedDepartments = departments.filter(item => result.departments?.includes(item.id));
     render();
+    if (!loaded && allowedDepartments.some(item => item.id === "manufacturing")) {
+      loadProduction().catch(error => { if (!directoryOpen) note(error.message); });
+    }
+  }
+
+  async function refreshDepartments() {
+    departmentError = "";
+    render();
+    try {
+      await loadDepartments();
+    } catch (error) {
+      departmentError = error.message;
+      render();
+    }
+  }
+
+  function loadingMessage(message) {
+    return `<div class="workspace-loading" role="status"><span class="workspace-spinner" aria-hidden="true"></span><span>${message}</span></div>`;
   }
 
   const departmentIcons = {
@@ -1512,7 +1541,8 @@ function mountRegister(root) {
   }
 
   function departmentDirectory() {
-    if (allowedDepartments === null) return `<p>Loading departments…</p>`;
+    if (departmentError) return `<div class="workspace-loading" role="status"><span>${esc(departmentError)}</span>${btn("Retry","reload-production")}</div>`;
+    if (allowedDepartments === null) return loadingMessage("Loading departments…");
     if (!allowedDepartments.length) return `<h1>Departments</h1><p>Your account has no department assigned.</p>`;
 
     return `<section class="department-directory">
@@ -1553,15 +1583,11 @@ function mountRegister(root) {
       return;
     }
     const requiresRegister = page !== 3 && page !== 4;
-    if (department.id !== "manufacturing") {
-      screen.innerHTML = heading("", department.name, department.scope)
-        + (loaded || !requiresRegister ? "" : panel("", "Connection", `<p>${btn("Retry connection","reload-production")}</p>`));
-      if (!loaded && requiresRegister) return;
-    } else {
-      screen.innerHTML = "";
-    }
+    screen.innerHTML = department.id === "manufacturing" ? "" : heading("", department.name, department.scope);
     if (!loaded && requiresRegister) {
-      screen.innerHTML = panel("Production", "Connect to the production register to continue.", `<p>${btn("Retry connection","reload-production")} </p>`);
+      screen.insertAdjacentHTML("beforeend", productionLoad
+        ? loadingMessage("Loading production register…")
+        : panel("Production", "Connect to the production register to continue.", `<p>${btn("Retry connection","reload-production")}</p>`));
       return;
     }
     if(page === 0) screen.insertAdjacentHTML("beforeend", dining());
@@ -1609,11 +1635,11 @@ function mountRegister(root) {
       department = next;
       page = department.pages[0] ?? -1;
       directoryOpen = false;
+      if (!loaded && department.pages.some(i => [0,1,2,5,6].includes(i))) {
+        loadProduction().catch(error => { if (!directoryOpen) note(error.message); });
+      }
       render();
       root.querySelector(".department-switch")?.focus();
-      if (!loaded && department.pages.some(i => [0,1,2,5,6].includes(i))) {
-        loadProduction().catch(error => note(error.message));
-      }
     },
     page: id => {
       const next = Number(id);
@@ -1990,7 +2016,7 @@ function mountRegister(root) {
     "recipe-remove": (_id, b) => b.closest(".recipe-row")?.remove(),
 
 
-    "reload-production": () => department ? loadProduction() : loadDepartments(),
+    "reload-production": () => directoryOpen ? refreshDepartments() : loadProduction(),
     "logout-production": async () => {
       const response = await fetch("/api/inventory", {
         method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
@@ -2110,8 +2136,7 @@ function mountRegister(root) {
     $("kot-print-area")?.replaceChildren();
   });
 
-  render();
-  loadDepartments().catch(error => note(error.message));
+  refreshDepartments();
 
   return () => {
     controller.abort();
@@ -2702,6 +2727,11 @@ const styles = `
 .retina-inventory-pos.directory-open{background:#f1ece1}
 .directory-open>.shell{width:100%;min-height:calc(100vh - 40px);margin:0;padding:0;border:0;box-shadow:none;background:transparent}
 .directory-open>.shell>.app-chrome{display:none}
+.workspace-loading{min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;color:#16283a}
+.directory-open .workspace-loading{min-height:calc(100dvh - 40px)}
+.workspace-spinner{width:24px;height:24px;border:2px solid #cfc3ac;border-top-color:#16283a;border-radius:50%;animation:workspace-spin .8s linear infinite}
+@keyframes workspace-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.workspace-spinner{animation:none}}
 .directory-open #status{min-height:0;margin:0;padding:8px clamp(22px,5vw,72px) 0}
 .directory-open #status:empty{display:none}
 .directory-open .department-directory{min-height:calc(100vh - 40px)}
