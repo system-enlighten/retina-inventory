@@ -710,6 +710,7 @@ function mountRegister(root) {
     productionLoad = request.then(result => {
       db = result.state || newRegister(false);
       revision = result.revision;
+      housingData = result.housingData || null;
       canWrite = result.canWrite;
       canSeed = result.canSeed;
       loaded = true;
@@ -940,7 +941,7 @@ function mountRegister(root) {
 
   function legacyCards(existing, inventoryView = false, ordering = false) {
     const registered = new Set(db.ingredients.map(row => String(row.id).trim().toUpperCase()));
-    const shown = new Set(existing.map(row => `${row.group}|${String(row.code || "").trim().toUpperCase()}`));
+    const shown = new Set(existing.filter(row => !row.configuration).map(row => `${row.group}|${String(row.code || "").trim().toUpperCase()}`));
     return legacyProducts.filter(item => !item.aliases.some(sku => shown.has(`${item.group}|${sku}`)))
       .map(item => {
         const imported = item.aliases.some(sku => registered.has(sku));
@@ -1008,7 +1009,7 @@ function mountRegister(root) {
       <div class="playcard-header draft">${catalogueIcon(item.group)}<span>${esc(item.group)}</span><span class="playcard-code">${esc(item.code)}</span></div>
       ${image ? `<div class="playcard-image"><span class="playcard-placeholder" aria-hidden="true">${catalogueIcon(item.group)}</span>
         <img src="${esc(image)}" alt="${esc(item.name)}" loading="${index < 12 ? "eager" : "lazy"}" ${index < 4 ? 'fetchpriority="high"' : ""} decoding="async" referrerpolicy="no-referrer"></div>` : ""}
-      <div class="playcard-copy"><h4>${item.details === "component-details" ? `<button type="button" class="playcard-title" data-action="component-details" data-id="${esc(item.id)}">${esc(item.name)}</button>` : esc(item.name)}</h4><p>${esc(item.spec)}</p>
+      <div class="playcard-copy"><h4>${["component-details","legacy-details","product-details"].includes(item.details) ? `<button type="button" class="playcard-title" data-action="${item.details}" data-id="${esc(item.id)}">${esc(item.name)}</button>` : esc(item.name)}</h4><p>${esc(item.spec)}</p>
         ${item.variant ? `<small>${esc(item.variant)}</small>` : ""}
         ${item.status ? `<span class="tag ${item.warn ? "warn" : ""}">${esc(item.status)}</span>` : ""}
       </div>
@@ -1316,7 +1317,7 @@ function mountRegister(root) {
       const specs = Object.values(dish.specs || {}).filter(Boolean).join(" · ");
       const enabled = canOrder && canWrite && hasBOM;
       return { id:dish.id, name:dish.name, code:dish.code || dish.fam,
-        group:division(dish.group), image:dish.image,
+        group:division(dish.group), image:dish.image, configuration:dish.configuration,
         spec:specs || dish.description || dish.group, price:dish.price,
         status:hasBOM ? count ? `${count} buildable` : "Out of stock" : "BOM required",
         warn:!count, variant:dish.variant || "", details:"product-details",
@@ -1615,10 +1616,113 @@ function mountRegister(root) {
   function addOrderProduct(data, tableId, product) {
     const table = find(data.tables, tableId);
     if (!table || !product || table.builtAt) throw Error("Select an available workbench and product.");
-    const line = table.lines.find(row => row.dish === product.id);
+    const line = table.lines.find(row => row.dish === product.id && (!product.configuration || row.bomRevision === product.bomRevision));
     if (line) line.count++;
     else table.lines.push({id:uid(),dish:product.id,name:product.name,group:product.group,
-      price:product.price,recipe:structuredClone(product.recipe || {}),count:1});
+      price:product.price,recipe:structuredClone(product.recipe || {}),count:1,
+      ...(product.configuration ? {configuration:structuredClone(product.configuration),bomRevision:product.bomRevision} : {})});
+  }
+
+  let housingData = null;
+  const housingRecord = item => item?.group === "Housing" ? housingData?.housings[item.id.slice(8)] : null;
+
+  function bomTree(nodes) {
+    return `<ul class="housing-bom-tree">${nodes.map(([sku, name, qty, unit, children]) => {
+      const label = `<strong>${esc(name)}</strong> <span>${esc(sku || "SKU missing")} · ${esc(qty || "Quantity missing")} ${esc(unit)}</span>`;
+      return `<li>${children.length ? `<details open><summary>${label}</summary>${bomTree(children)}</details>` : label}</li>`;
+    }).join("")}</ul>`;
+  }
+
+  function componentLabel(group, id) {
+    if (!id) return "Not specified";
+    const rows = housingData[group][id] || [];
+    return `${id} · ${rows.length ? rows.map(row => row.filter(Boolean).join(" / ")).join(" | ") : "Source record missing"}${rows.length > 1 ? " · Ambiguous article number" : ""}`;
+  }
+
+  function configureHousing(item, tableId) {
+    const housing = housingRecord(item);
+    const finished = housing.finished && !housing.options.length;
+    const candidates = finished ? [[item.code, "", "", ""]] : housing.options;
+    const choices = [...new Set(candidates.map(row => row[1]))];
+    const variants = [...new Set([...Object.keys(housing.variants), ...choices])];
+    const variantLabel = code => `${code || "No variant specified"}${housing.variants[code]?.some(Boolean) ? " · " + housing.variants[code].filter(Boolean).join(" / ") : ""}`;
+    const variantSelect = options("housing-variant", "Housing variant", variants.map(code => [code, variantLabel(code)]), choices[0] ?? variants[0]);
+    const fallback = housing.parts.map(part => [...part, []]);
+    const sourceTree = housing.tree.length ? housing.tree : fallback;
+    modal("Configure " + item.name, `
+      <p><b>${esc(item.code)}</b> · ${esc(housing.spec.join(" · ") || item.spec)}</p>
+      <div class="fields">${variants.length ? variantSelect : ""}<div id="housing-led"></div><div id="housing-driver"></div></div>
+      <div id="housing-selection" aria-live="polite"></div>
+      <details open><summary><strong>Housing BOM · source reference</strong></summary>
+      ${sourceTree.length ? bomTree(sourceTree) : empty("No assembly BOM was found in the sheet for this housing.")}
+      ${housing.tree.length ? empty("Assembly relationships follow the sheet’s stages. Verify inconsistent SKUs and quantities before approval.") : ""}
+      </details>
+      ${housing.accessories?.length ? `<details><summary>Variant parts and accessories</summary>${bomTree(housing.accessories)}</details>` : ""}
+    `);
+    const form = $("dialog").querySelector("form");
+    const variant = form.elements["housing-variant"];
+    const ledSlot = $("housing-led"), driverSlot = $("housing-driver"), resultSlot = $("housing-selection");
+    function refresh(change) {
+      const byVariant = candidates.filter(row => row[1] === (variant?.value || ""));
+      if (change !== "housing-driver" && change !== "housing-config-code") {
+        if (change !== "housing-led") {
+          const leds = [...new Set(byVariant.map(row => row[2]))];
+          ledSlot.innerHTML = leds.length ? options("housing-led-choice", "LED · sheet matches", leds.map(id => [id,componentLabel("led",id)]), leds[0]) : "";
+        }
+        const drivers = [...new Set(byVariant.filter(row => row[2] === form.elements["housing-led-choice"]?.value).map(row => row[3]))];
+        driverSlot.innerHTML = drivers.length ? options("housing-driver", "Driver · sheet matches", drivers.map(id => [id,componentLabel("drivers",id)]), drivers[0]) : "";
+      }
+      const matches = byVariant.filter(row => row[2] === form.elements["housing-led-choice"]?.value && row[3] === form.elements["housing-driver"]?.value);
+      const chosen = matches.find(row => row[0] === form.elements["housing-config-code"]?.value) || matches[0];
+      if (!chosen) {
+        resultSlot.innerHTML = empty("No LED and driver combination is recorded for this variant.");
+        return;
+      }
+      const [code, v, led, driver] = chosen;
+      const configuration = {housing:item.id, variant:v, led, driver, code, finished};
+      const registered = db.menu.find(product => sameHousingConfiguration(product.configuration, configuration));
+      const unresolved = !finished && (!led || !driver || housingData.led[led]?.length !== 1 || housingData.drivers[driver]?.length !== 1
+        || (v && !housing.variants[v]));
+      const registeredParts = Object.entries(registered?.recipe || {});
+      resultSlot.innerHTML = `
+        ${matches.length > 1 ? options("housing-config-code","Ordering code",matches.map(row => [row[0],row[0]]),code) : ""}
+        <p><strong>${esc(code)}</strong> · ${registered ? `Approved · BOM rev. ${registered.bomRevision}` : "Needs review"}</p>
+        <p>${registered ? "Approved parts per finished unit" : finished ? "Purchased finished unit. Review its stock SKU and any separately stocked accessories." : "Imported combinations are candidates. Confirm fit, electrical ratings, dimming and load before approving the stock parts."}</p>
+        ${registeredParts.length ? `<ul>${registeredParts.map(([sku,qty]) => `<li>${esc(sku)} · ${esc(qty)} ${esc(find(db.ingredients,sku)?.unit)}</li>`).join("")}</ul>` : ""}
+        ${unresolved ? empty("Resolve missing or ambiguous article references in the source sheet before approving this configuration.") : ""}
+        <div class="row" id="housing-config-action"></div>`;
+      if (!canWrite || unresolved) return;
+      const action = $("housing-config-action");
+      if (registered && tableId) {
+        action.innerHTML = '<button type="button" class="btn primary">Add to workbench</button>';
+        action.firstElementChild.onclick = async event => {
+          const button = event.currentTarget;
+          button.disabled = true;
+          try {
+            await update(d => {
+              const product = d.menu.find(entry => sameHousingConfiguration(entry.configuration, configuration));
+              if (!product || !Object.keys(product.recipe || {}).length) throw Error("Approve a BOM before adding this configuration.");
+              addOrderProduct(d,tableId,product);
+            });
+            $("dialog").close();
+          } catch (error) {
+            form.querySelector(".error").textContent = error.message;
+          } finally { button.disabled = false; }
+        };
+      } else if (!registered) {
+        action.innerHTML = '<button type="button" class="btn primary">Review and approve BOM</button>';
+        action.firstElementChild.onclick = () => {
+          $("dialog").close();
+          actions.dish("", null, {item:{...item,code,name:`${item.name} · ${code}`}, configuration, tableId, sourceTree});
+        };
+      }
+    }
+    form.addEventListener("change", event => refresh(event.target.name === "housing-led-choice" ? "housing-led" : event.target.name));
+    refresh("");
+  }
+
+  function sameHousingConfiguration(a,b) {
+    return a && ["housing","variant","led","driver","code","finished"].every(key => a[key] === b[key]);
   }
 
   // Actions Dispatcher
@@ -1671,12 +1775,19 @@ function mountRegister(root) {
     "legacy-order": id => {
       const table = find(db.tables, selected);
       if (!table || table.builtAt) throw Error("Select an available workbench before adding a product.");
-      actions.dish("", null, {item:find(legacyProducts,id),tableId:table.id});
+      const item = find(legacyProducts,id);
+      if (housingRecord(item)) configureHousing(item,table.id);
+      else actions.dish("", null, {item,tableId:table.id});
     },
-    "legacy-bom": id => actions.dish("",null,{item:find(legacyProducts,id)}),
+    "legacy-bom": id => {
+      const item = find(legacyProducts,id);
+      if (housingRecord(item)) configureHousing(item);
+      else actions.dish("",null,{item});
+    },
     "legacy-details": id => {
       const item = find(legacyProducts, id);
       if (!item) return;
+      if (housingRecord(item)) return configureHousing(item);
       modal(item.name, `<p><b>${esc(item.code)}</b> · ${esc(item.group)}</p><p>${esc(item.spec)}</p>
         ${Number.isFinite(item.balance) ? `<p>Existing inventory balance: ${esc(item.balance)}</p>` : ""}
         <p>To use this component in a workbench order, add it to the production stockroom and include it in a luminaire BOM.</p>`);
@@ -1708,6 +1819,7 @@ function mountRegister(root) {
       const parts = Object.entries(item.recipe || {});
       modal(item.name, `<p>${esc(item.code || item.fam || "")} · ${money(item.price)}</p>
         <p>${esc(Object.values(item.specs || {}).join(" · ") || item.description || "")}</p>
+        ${item.sourceBOM?.length ? `<details><summary>Housing BOM · source reference</summary>${bomTree(item.sourceBOM)}</details>` : ""}
         ${parts.length ? `<h3>Bill of materials</h3><ul>${parts.map(([sku, qty]) =>
           `<li>${esc(find(db.ingredients,sku)?.name || sku)} · ${esc(qty)}</li>`).join("")}</ul>` : "<p>BOM required.</p>"}`);
     },
@@ -1967,6 +2079,7 @@ function mountRegister(root) {
       }
       const defaultGroup = {Housing:"Architectural Downlights",LED:"LED Engines & Strip",Driver:"Control Gear & Drivers"}[item?.group];
       const source = m || item;
+      const configuration = setup.configuration || m?.configuration;
       const sheet = m ? recipeReference(db.menu.indexOf(m)) : "New BOM";
       modal(m ? "Edit Luminaire BOM" : item ? "Add " + item.name : "Add Luminaire & BOM",
         `<fieldset><legend class="draft"><span class="section-numeral">01 /</span> Luminaire Specification</legend>
@@ -1978,6 +2091,9 @@ function mountRegister(root) {
         ${input("price", "Base Price (" + db.currency + ")", source?.price ?? "", "number", "required min='0' max='1000000' step='0.01'")}
         <div class="description-field">${input("description", "Catalogue Specification Description", m?.description || item?.spec?.slice(0,320) || "", "text", "maxlength='320'")}</div></div></fieldset>
         <fieldset><legend class="draft"><span class="section-numeral">02 /</span> Bill of Materials per Unit (BOM)</legend>
+        ${configuration ? `<p><strong>${esc(configuration.code)}</strong></p>
+        <label><input class="configuration-review" name="configuration-reviewed" type="checkbox" required> I verified the configuration and every stock part and quantity for this build.</label>
+        ${setup.sourceTree?.length ? `<details><summary>Source BOM for review</summary>${bomTree(setup.sourceTree)}</details>` : ""}` : ""}
         <p class="schedule-note">Specify the quantity of each raw component required to build one finished luminaire.</p><div id="recipe"></div>
         <p class="add-line">${btn("+ Component Line", "recipe-add", "", "mini")}</p></fieldset>`,
         f => update(d => {
@@ -1992,14 +2108,28 @@ function mountRegister(root) {
             group: required(f, "group"),
             price: number(read(f, "price"), 100, 0)/100,
             description: read(f, "description"),
-            recipe: Object.fromEntries(ids.map((ref, i) => [ref, number(portions[i], 1)]))
+            recipe: Object.fromEntries([...new Set(ids)].map(ref => [ref, ids.reduce((total, id, i) => id === ref ? total + number(portions[i], 1) : total, 0)]))
           });
+          if (configuration) {
+            if (!f.has("configuration-reviewed")) throw Error("Confirm the configuration review before approving its BOM.");
+            const expected = configuration.finished ? [configuration.code.toUpperCase()]
+              : [`D0.${configuration.led}.0`, `D0.0.${configuration.driver}`];
+            if (expected.some(sku => !ids.some(id => id.toUpperCase() === sku))) {
+              throw Error("Include the required stockroom SKUs in the approved BOM: " + expected.join(", ") + ".");
+            }
+            if (!id && d.menu.some(entry => sameHousingConfiguration(entry.configuration, configuration))) {
+              throw Error("This configuration already has an approved BOM.");
+            }
+            lum.configuration = configuration;
+            lum.bomRevision = (lum.bomRevision || 0) + 1;
+            if (setup.sourceTree?.length) lum.sourceBOM = structuredClone(setup.sourceTree);
+          }
           if(!id) {
             if (item) lum.code = item.code;
             d.menu.push(lum);
             if (setup.tableId) addOrderProduct(d, setup.tableId, lum);
           }
-          else {
+          else if (!configuration) {
             for(const table of d.tables) {
               for(const line of table.lines) {
                 if(line.dish === id) line.recipe = structuredClone(lum.recipe);
@@ -2755,6 +2885,7 @@ const styles = `
 .playcard-header,.playcard-footer{display:flex;justify-content:space-between;align-items:center;gap:7px;padding:8px 10px}
 .playcard-header{justify-content:flex-start;background:var(--blue);border-bottom:1px solid var(--rule)}
 .playcard-code{margin-left:auto;color:var(--rust)}
+.housing-bom-tree{padding-left:1.35em;margin:.5em 0}.housing-bom-tree li{margin:.3em 0}.housing-bom-tree span{color:var(--muted)}.housing-bom-tree summary{cursor:pointer}.configuration-review{width:auto}
 .playcard-image{position:relative;display:grid;place-items:center;height:104px;background:#fff;overflow:hidden}
 .playcard-image img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff}
 .playcard-image img[hidden]{display:none}

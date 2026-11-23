@@ -1,3 +1,4 @@
+import housingData from "../server/housing-config-data.js";
 import crypto from 'node:crypto';
 import { OAuth2Client, JWT } from 'google-auth-library';
 import { google } from 'googleapis';
@@ -112,7 +113,8 @@ export default async function handler(req,res) {
         const salesView=sales ? {sales:d.sales} : {};
         result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
       }
-      return res.json({...result,canWrite,canSeed:access.admin,email});
+      return res.json({...result,canWrite,canSeed:access.admin,email,
+        ...(action === "productionLoad" && manufacturing ? {housingData} : {})});
     }
     if(action==='catalog') {
       if(!canSee('manufacturing') && !canSee('purchase')) return res.status(403).json({error:'Catalogue stock access is restricted to Manufacturing or Purchase.'});
