@@ -420,6 +420,16 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
   text-align: center;
 }
 
+.billing-workspace{display:grid;grid-template-columns:minmax(185px,24%) minmax(0,1fr);border:1px solid var(--line);background:#fff}
+.billing-workspace aside{padding:12px;border-right:1px solid #d4cfc2}
+.billing-workspace aside .btn{width:100%;text-align:left;margin-bottom:6px}
+.billing-detail{min-width:0;background:#f7f5ef}
+.billing-detail header{padding:14px;background:white}
+.billing-detail header small{display:block}
+.billing-toolbar{padding:8px 12px;border-block-end:1px solid #d4cfc2}
+.billing-toolbar:empty{display:none}
+#billing-preview{display:block;width:100%;height:70vh;min-height:380px;border:0;background:white}
+@media(max-width:700px){.billing-workspace{grid-template-columns:1fr}.billing-workspace aside{border-right:0}}
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
@@ -736,11 +746,11 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates"];
+  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices"];
   const departments = [
     {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
-    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[8,3,5]},
+    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[8,9,3,5]},
     {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
     {id:"accounts", name:"Accounts", scope:"Ledger, payments and reporting", pages:[]},
     {id:"legal", name:"Patent & Legal Team", scope:"Patents, IP and contracts", pages:[]},
@@ -1611,7 +1621,7 @@ function mountRegister(root) {
     else if(page === 4) screen.insertAdjacentHTML("beforeend", nomenclature());
     else if(page === 5) screen.insertAdjacentHTML("beforeend", sales());
     else if(page === 6) screen.insertAdjacentHTML("beforeend", settings());
-    else if(page === 8) screen.insertAdjacentHTML("beforeend", estimatesPage());
+    else if(page === 8 || page === 9) screen.insertAdjacentHTML("beforeend", estimatesPage(page === 9));
   }
 
   // Recipe row in BOM editor
@@ -1831,19 +1841,75 @@ function mountRegister(root) {
     return id;
   }
 
-  function estimatesPage() {
-    const estimates = db.estimates || [];
-    const list = estimates.map(estimate => `<div class="row between line">
-      <span><strong>${esc(estimate.ref)}</strong> · ${esc(estimate.name)} · ${money(estimate.items.reduce((sum,item) => sum + item.cents * item.count,0) / 100)}
-      · ${estimate.payment ? "Advance received · released to production" : estimate.versions?.length ? "Issued · awaiting advance" : "Draft"}</span>
-      ${btn("View Estimate","estimate-view",estimate.id)}</div>`).join("");
-    return heading("","Estimates","Import the Product Technical Table, issue an estimate revision, then record the advance to release production.",
-      btn("+ Add Estimate","estimate-new") + btn("Import Enlighten output","estimate-import","","primary")) + panel("","Sales estimates",list || empty("No estimates yet."));
+  let estimateSelection = "", invoiceSelection = "";
+  function invoiceBalance(invoice) {
+    return invoice.subtotalCents - invoice.advanceCents - (invoice.payments || []).reduce((sum,payment) => sum + payment.cents,0);
+  }
+
+  function selectedDocument(key) {
+    const [id,revision] = key.split(":");
+    if (revision === "invoice") {
+      const invoice = find(db.invoices || [],id);
+      return invoice && {id, invoice, title:invoice.project, label:"Invoice",
+        items:invoice.lines.map(line => ({...line,sku:line.code || line.name,cents:Math.round(line.price * 100)}))};
+    }
+    const estimate = find(db.estimates || [],id);
+    const issued = revision === "draft" ? estimate : estimate?.versions?.[Number(revision)];
+    return issued && {id, estimate, issued, title:issued.name, label:"Estimate", items:issued.items};
+  }
+
+  function documentHTML(doc) {
+    const template = window.retinaEstimateFormat;
+    if (!template) throw Error("Estimate format could not load. Reload Retina and try again.");
+    const format = (html, fields) => html.replace(/\{\{(\w+)\}\}/g, (_, field) => esc(fields[field] ?? ""));
+    const stamp = doc.invoice?.createdAt || doc.issued?.issuedAt;
+    const date = stamp ? new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata"}).format(new Date(stamp)) : "";
+    const title = doc.invoice ? "DRAFT INVOICE · " + doc.title + " · " + doc.invoice.id :
+      "BILL OF QUANTITIES FOR LIGHT FITTINGS · " + doc.title + " · " + doc.estimate.ref + " · " +
+      (doc.issued.issuedAt ? estimateVersion(doc.issued) : "DRAFT");
+    const lines = doc.items.map(item => format(template.line,{0:item.circuit,1:(item.name || item.sourceArticle || item.sku) + (item.lengthMm ? "\n" + item.lengthMm + " mm" : ""),
+      4:item.sku,16:item.count.toFixed(2),19:money(item.cents / 100),20:money(item.count * item.cents / 100)})).join("");
+    const footer = doc.invoice ? `<div style="padding:16px;font:14px Arial"><p>Dispatch ${esc(doc.invoice.dispatchRef)}</p>
+      <p>${esc(doc.invoice.note || "")}</p><p>Advance applied · ${esc(money(doc.invoice.advanceCents / 100))}</p><p>Balance before tax · ${esc(money(invoiceBalance(doc.invoice) / 100))}</p></div>` : "";
+    return format(template.head,{TITLE:title.toUpperCase(),DATE:date}).replace(/<div class="toolbar">.*?<\/div>/,"") + lines +
+      format(template.tail,{TOTAL:money(estimateTotal(doc.items) / 100)}) + template.end.replace("</html>",footer + "</html>");
+  }
+
+  function estimatesPage(invoices) {
+    const records = invoices ? db.invoices || [] : db.estimates || [];
+    const keyFor = record => record.id + ":" + (invoices ? "invoice" : record.versions?.at(-1)?.revision ?? "draft");
+    const selected = invoices ? invoiceSelection : estimateSelection;
+    const key = selectedDocument(selected) ? selected : records.length ? keyFor(records[0]) : "";
+    const doc = selectedDocument(key);
+    const list = records.map(record => btn((invoices ? record.id + " · " + record.project : record.ref + " · " + record.name),
+      "billing-select",keyFor(record),key.startsWith(record.id + ":") ? "primary" : "")).join("");
+    const latest = doc?.estimate?.versions?.at(-1);
+    const historical = latest && doc.issued !== latest;
+    const linked = doc?.estimate && (db.invoices || []).find(invoice => invoice.estimateId === doc.id && invoice.issuedFromRevision === doc.issued.revision);
+    const label = invoices ? "Invoice" : "Estimate";
+    const actions = doc ? btn("Edit " + label,invoices ? "invoice-edit" : "estimate-edit",key) +
+      btn("Send " + label,"billing-send",key) + (!invoices ? btn(linked ? "View Invoice" : "Convert to Invoice","billing-convert",key) : "") +
+      btn("Share Details","billing-share",key) + btn("Print / Save PDF","billing-print") + btn("Record Payment","billing-payment",key) : "";
+    const history = doc?.estimate?.versions?.map(version => btn(estimateVersion(version),"billing-select",doc.id + ":" + version.revision)).join("") || "";
+    const status = doc?.estimate?.payment ? "Advance recorded" : doc?.invoice ? doc.invoice.status || "Draft" : latest ? "Issued" : "Draft";
+    return heading("",invoices ? "Invoices" : "Estimates","",invoices ? "" :
+      btn("+ Add New Estimate","estimate-new") + btn("Import Enlighten output","estimate-import","","primary")) +
+      `<section class="billing-workspace"><aside aria-label="${label} list">${list || empty("No " + label.toLowerCase() + "s yet.")}</aside>
+      <div class="billing-detail">${doc ? `<header><strong>${esc(doc.title)}</strong><small>${esc(doc.invoice?.id || doc.estimate.ref)} · ${status}</small></header>
+      <nav class="row billing-toolbar" aria-label="${label} actions">${actions}</nav>
+      ${!invoices ? `<div class="row billing-toolbar">${!historical && !doc.estimate.payment ?
+        btn(latest ? "Issue next revision" : "Issue version 1","estimate-issue",doc.id) +
+        btn("Import updated technical output","estimate-import-revision",doc.id) : ""}${history}</div>` : ""}
+      <iframe id="billing-preview" title="${label} document" srcdoc="${esc(documentHTML(doc))}"></iframe>` : ""}</div></section>`;
   }
 
   async function saveEstimate(action, estimate) {
-    await productionRequest(action,{estimate});
+    const result = await productionRequest(action,{estimate});
+    if (action === "estimateSave" || action === "estimateIssue" || action === "estimateEdit") {
+      estimateSelection = estimate.id + ":" + (result.estimate?.versions?.at(-1)?.revision ?? "draft");
+    }
     await loadProduction();
+    return result;
   }
 
   const estimateVersion = version => "Version " + version.version + " · Revision " + version.revision;
@@ -1856,20 +1922,38 @@ function mountRegister(root) {
       `<tr><td>${esc(item.sku)}</td><td>${sourceLocation(item)}</td><td>${cutLength(item)}</td><td>${item.count}</td><td>${money(item.cents / 100)}</td></tr>`).join(""));
   }
 
-  function reviseEstimate(estimate, output) {
+  function reviseEstimate(estimate, output, draft = false) {
     const revision = estimate?.versions?.length || 0;
     const source = output || estimate?.source;
-    const items = output ? output.items.map(item => ({...item,sourceArticle:item.sku})) : estimate.items;
-    modal("Issue estimate · Version " + (revision + 1) + " / Revision " + revision,
+    const items = output ? output.items.map(item => ({...item,sourceArticle:item.sku})) : estimate?.items || [{sku:"",count:1}];
+    modal(draft ? (estimate ? "Edit Estimate" : "Add New Estimate") : "Issue estimate · Version " + (revision + 1) + " / Revision " + revision,
       input("name","Project name",output?.projectName || estimate?.name,"text","required maxlength='120'") +
       grid(["Source article / circuit","Cut length","Ordering SKU","Qty","Unit price"],items.map((item,index) =>
         `<tr><td>${esc(item.sourceArticle || item.sku)}<br>${sourceLocation(item)}</td><td>${cutLength(item)}</td>
         <td>${input("sku"+index,"SKU",item.sku,"text","required maxlength='100'")}</td>
         <td>${input("count"+index,"Units",item.count,"number","required min='1' max='1000000' step='1'")}</td>
         <td>${input("price"+index,"Price / unit",item.cents ? item.cents / 100 : "","number","required min='0.01' step='0.01'")}</td></tr>`).join("")),
-      form => saveEstimate("estimateIssue",{id:estimate?.id || crypto.randomUUID(),revision,source,name:required(form,"name"),
-        items:items.map((item,index) => ({...item,sku:required(form,"sku"+index),count:number(read(form,"count"+index),1),
-          cents:number(read(form,"price"+index),100)}))}),"Issue estimate");
+      form => {
+        const lines = [...items];
+        while (form.has("sku"+lines.length)) lines.push({});
+        return saveEstimate(draft ? (estimate ? "estimateEdit" : "estimateSave") : "estimateIssue",
+          {id:estimate?.id || crypto.randomUUID(),revision,source,name:required(form,"name"),
+            items:lines.map((item,index) => ({...item,sku:required(form,"sku"+index),count:number(read(form,"count"+index),1),
+              cents:number(read(form,"price"+index),100)}))});
+      },draft ? "Save draft" : "Issue estimate");
+    if (draft) {
+      const table = $("dialog").querySelector("tbody");
+      let index = items.length;
+      const add = document.createElement("button");
+      add.type = "button"; add.className = "btn"; add.textContent = "+ Add line";
+      add.onclick = () => {
+        if (index >= 300) return;
+        table.insertAdjacentHTML("beforeend",`<tr><td></td><td></td><td>${input("sku"+index,"SKU")}</td>
+          <td>${amount("count"+index,"Units",1)}</td><td>${input("price"+index,"Price / unit","","number","required min='0.01' step='0.01'")}</td></tr>`);
+        index++;
+      };
+      table.closest(".scroll").after(add);
+    }
   }
 
   // Actions Dispatcher
@@ -1990,19 +2074,7 @@ function mountRegister(root) {
       $("dialog").close();
       actions["production-sheet"](id);
     },
-    "estimate-new": () => {
-      const id = crypto.randomUUID();
-      modal("Add Sales Estimate", input("name","Project name","","text","required maxlength='120'") +
-        '<label>Estimate lines<textarea name="items" required rows="6" placeholder="SKU, quantity, unit price"></textarea></label>' +
-        empty("Enter one line per product. Use the exact ordering SKU and a unit price in " + db.currency + "."), form => {
-          const items = required(form,"items").split(/\r?\n/).filter(line => line.trim()).map(line => {
-            const fields = line.split(",").map(value => value.trim());
-            if (fields.length !== 3 || !fields[0]) throw Error("Use SKU, quantity, unit price on each line.");
-            return {sku:fields[0],count:number(fields[1],1),cents:number(fields[2],100)};
-          });
-          return saveEstimate("estimateSave",{id,name:required(form,"name"),items});
-        });
-    },
+    "estimate-new": () => reviseEstimate(null,null,true),
     "estimate-import": id => modal("Import Enlighten output",
       '<label>Product Technical Table export<input name="transfer" type="file" accept=".json,application/json" required></label>',
       async form => {
@@ -2032,63 +2104,53 @@ function mountRegister(root) {
       $("dialog").close();
       actions["estimate-import"](id);
     },
-    "estimate-document": key => {
-      const [id,revision] = key.split(":");
-      const estimate = find(db.estimates || [],id);
-      const issued = revision === "draft" ? estimate : estimate?.versions?.[Number(revision)];
-      if (!issued) throw Error("Estimate version unavailable.");
-      const template = window.retinaEstimateFormat;
-      if (!template) throw Error("Estimate format could not load. Reload Retina and try again.");
-      const format = (html, fields) => html.replace(/\{\{(\w+)\}\}/g, (_, field) => esc(fields[field] ?? ""));
-      const title = "BILL OF QUANTITIES FOR LIGHT FITTINGS · " + issued.name.toUpperCase() +
-        " · " + estimate.ref + (revision === "draft" ? " · DRAFT" : " · " + estimateVersion(issued).toUpperCase());
-      const date = issued.issuedAt ? new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata"}).format(new Date(issued.issuedAt)) : "";
-      const lines = issued.items.map(item => format(template.line,{
-        0:item.circuit, 1:item.sourceArticle || item.sku, 3:item.lengthMm ? item.lengthMm + " mm" : "",
-        4:item.sku, 16:item.count.toFixed(2), 19:money(item.cents / 100), 20:money(item.count * item.cents / 100)
-      })).join("");
-      const documentHTML = format(template.head,{TITLE:title,DATE:date}) + lines +
-        format(template.tail,{TOTAL:money(estimateTotal(issued.items) / 100)}) + template.end;
-      const url = URL.createObjectURL(new Blob([documentHTML],{type:"text/html;charset=utf-8"}));
-      window.open(url,"_blank","noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url),60000);
+    "billing-select": key => {
+      if (key.endsWith(":invoice")) { invoiceSelection = key; page = 9; }
+      else { estimateSelection = key; page = 8; }
+      render();
     },
-    "estimate-history": key => {
-      const [id,revision] = key.split(":");
-      const estimate = find(db.estimates || [],id);
-      const issued = estimate?.versions?.[Number(revision)];
-      if (!issued) return;
-      $("dialog").close();
-      modal(estimate.ref + " · " + estimateVersion(issued),`<p>${esc(issued.name)} · ${esc(issued.issuedAt)}</p>` +
-        estimateLines(issued.items) + `<p>Total · ${money(estimateTotal(issued.items) / 100)}</p>` + btn("Open printable estimate","estimate-document",key));
+    "estimate-edit": key => {
+      const doc = selectedDocument(key);
+      if (doc.estimate.payment) throw Error("This estimate has been released to production.");
+      if (doc.issued.issuedAt && doc.issued !== doc.estimate.versions.at(-1)) throw Error("Select the current revision to edit.");
+      reviseEstimate(doc.estimate,null,!doc.issued.issuedAt);
     },
-    "estimate-view": id => {
-      const estimate = find(db.estimates || [],id);
-      if (!estimate) return;
-      const issued = estimate.versions?.at(-1);
-      modal(estimate.ref + " · " + estimate.name,
-        estimateLines(estimate.items) + `<p>Total · ${money(estimateTotal(estimate.items) / 100)}</p>` +
-        btn("Open printable estimate","estimate-document",id + ":" + (issued?.revision ?? "draft")) +
-        (estimate.versions?.length ? "<h3>Issued versions</h3>" + estimate.versions.map(version =>
-          btn(estimateVersion(version),"estimate-history",id + ":" + version.revision)).join(" ") : "") +
-        (!estimate.payment ? '<div class="row">' + btn(issued ? "Issue next revision" : "Issue version 1","estimate-issue",id) +
-          btn("Import updated technical output","estimate-import-revision",id) + "</div>" : "") +
-        (estimate.payment ? `<p>Advance received · ${money(estimate.payment.cents / 100)} · ${esc(estimate.payment.reference)}</p>` : issued ?
-          input("reference","Advance reference","","text","required maxlength='100'") +
-          input("paid","Advance received","","number","required min='0.01' step='0.01'") : ""),
-        !estimate.payment && issued ? form => saveEstimate("estimatePayment",{id,revision:issued.revision,
-          reference:required(form,"reference"),cents:number(read(form,"paid"),100)}) : undefined,
-        "Record advance & release production");
+    "invoice-edit": key => {
+      const {invoice} = selectedDocument(key);
+      modal("Edit Invoice",input("note","Invoice note",invoice.note || "","text","maxlength='250'"), form =>
+        saveEstimate("invoiceEdit",{id:invoice.id,note:read(form,"note")}));
     },
-    "dispatch-invoice": id => {
-      const invoice = find(db.invoices || [],id);
-      if (!invoice) return;
-      modal(invoice.id + " · Draft invoice",`<p>${esc(invoice.project)} · Dispatch ${esc(invoice.dispatchRef)}</p>` +
-        estimateLines(invoice.lines.map(line => ({...line,sku:line.code || line.name,cents:Math.round(line.price * 100)}))) +
-        `<p>Subtotal · ${money(invoice.subtotalCents / 100)}</p>
-        <p>Advance applied · ${money(invoice.advanceCents / 100)}</p>
-        <p>Balance before tax · ${money((invoice.subtotalCents - invoice.advanceCents) / 100)}</p>` + btn("Print draft invoice","print-document"));
+    "billing-convert": key => {
+      const doc = selectedDocument(key);
+      const linked = (db.invoices || []).find(invoice => invoice.estimateId === doc.id && invoice.issuedFromRevision === doc.issued.revision);
+      if (linked) return actions["billing-select"](linked.id + ":invoice");
+      note("The invoice is created when the workbench order dispatches. Record the advance on the issued estimate to release production.");
     },
+    "billing-payment": key => {
+      const {invoice,estimate,issued} = selectedDocument(key);
+      if (invoice && invoiceBalance(invoice) <= 0) throw Error("This invoice has no outstanding balance.");
+      if (estimate && (!issued.issuedAt || issued !== estimate.versions.at(-1) || estimate.payment))
+        throw Error("Select the current issued estimate with an outstanding advance.");
+      modal(invoice ? "Record invoice payment" : "Record advance & release production",
+        input("reference","Payment reference") + input("paid","Amount received","","number","required min='0.01' step='0.01'"),
+        form => saveEstimate(invoice ? "invoicePayment" : "estimatePayment",{
+          id:invoice?.id || estimate.id,revision:issued?.revision,reference:required(form,"reference"),cents:number(read(form,"paid"),100)}));
+    },
+    "billing-send": key => {
+      const doc = selectedDocument(key);
+      const ref = doc.invoice?.id || doc.estimate.ref;
+      const body = doc.title + "\n" + ref + "\nTotal: " + money(estimateTotal(doc.items)/100);
+      modal("Send " + doc.label,empty("Save a PDF to attach in your email app.") +
+        `<a class="btn" href="mailto:?subject=${encodeURIComponent(doc.label + " " + ref)}&amp;body=${encodeURIComponent(body)}">Open email draft</a>`);
+    },
+    "billing-share": async key => {
+      const doc = selectedDocument(key);
+      await navigator.clipboard.writeText(doc.label + " " + (doc.invoice?.id || doc.estimate.ref) + "\n" +
+        doc.title + "\nTotal: " + money(estimateTotal(doc.items)/100));
+      note(doc.label + " details copied.");
+    },
+    "billing-print": () => $("billing-preview").contentWindow.print(),
+    "dispatch-invoice": id => actions["billing-select"](id + ":invoice"),
 
     "print-document": () => {
       let area = $("document-print-area");

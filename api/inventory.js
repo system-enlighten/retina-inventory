@@ -82,7 +82,7 @@ export default async function handler(req,res) {
     const access=accessFor(employee);
     const canSee=id=>access.departments.includes(id);
     if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile?.name||email,departments:access.departments});
-    const estimateWrite = ['estimateSave','estimateIssue','estimatePayment'].includes(action);
+    const estimateWrite = ['estimateSave','estimateIssue','estimatePayment','estimateEdit','invoiceEdit','invoicePayment'].includes(action);
     if(action==='productionLoad' || action==='productionSave' || estimateWrite) {
       const manufacturing=canSee('manufacturing');
       const purchasing=canSee('purchase');

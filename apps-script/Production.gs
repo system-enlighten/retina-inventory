@@ -8,7 +8,7 @@ function productionRegister_(input) {
   var chunkSize = 40000;
   var chunkCount = 30;
   var fieldCount = 3 + chunkCount;
-  var salesMutation = ['estimateSave','estimateIssue','estimatePayment'].indexOf(input.action) !== -1;
+  var salesMutation = ['estimateSave','estimateIssue','estimatePayment','estimateEdit','invoiceEdit','invoicePayment'].indexOf(input.action) !== -1;
   var isSave = input.action === 'productionSave' || salesMutation;
   var encoded = '';
   if (isSave && !salesMutation) {
@@ -76,9 +76,32 @@ function productionRegister_(input) {
 
 function retinaEstimateMutation_(state, input) {
   var data = input.estimate || {};
+  if (input.action === 'invoiceEdit' || input.action === 'invoicePayment') {
+    var invoice = (state.invoices || []).find(function(row) { return row.id === data.id; });
+    if (!invoice) throw Error('Invoice not found.');
+    if (input.action === 'invoiceEdit') {
+      invoice.note = String(data.note || '').trim().slice(0,250);
+      return invoice;
+    }
+    invoice.payments = invoice.payments || [];
+    var paymentRef = String(data.reference || '').trim();
+    if (!paymentRef || paymentRef.length > 120 || !Number.isSafeInteger(data.cents) || data.cents < 1)
+      throw Error('Enter a valid payment amount and reference.');
+    var duplicate = invoice.payments.find(function(payment) { return payment.reference === paymentRef; });
+    if (duplicate) {
+      if (duplicate.cents !== data.cents) throw Error('This reference has already been recorded.');
+      return invoice;
+    }
+    var received = invoice.payments.reduce(function(sum,payment) { return sum + payment.cents; },0);
+    if (data.cents > invoice.subtotalCents - invoice.advanceCents - received)
+      throw Error('Payment exceeds the invoice balance before tax.');
+    invoice.payments.push({reference:paymentRef,cents:data.cents,receivedAt:new Date().toISOString()});
+    return invoice;
+  }
   state.estimates = state.estimates || [];
   var existing = state.estimates.find(function(row) { return row.id === data.id; });
-  if (input.action === 'estimateSave' || input.action === 'estimateIssue') {
+  if (input.action === 'estimateSave' || input.action === 'estimateIssue' || input.action === 'estimateEdit') {
+    if (input.action === 'estimateEdit' && (!existing || existing.versions && existing.versions.length)) throw Error('Only drafts can be edited without issuing a revision.');
     if (existing && existing.payment) throw Error('A released estimate cannot be revised.');
     if (existing && input.action === 'estimateSave') return existing;
     var versions = existing ? existing.versions || [] : [];
