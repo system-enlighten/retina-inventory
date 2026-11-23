@@ -443,6 +443,7 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
 </div>
 <script src="/production/catalogue-data.js"></script>
+<script src="/production/estimate-format.js"></script>
 <script>
 function mountRegister(root) {
   const document = root.ownerDocument;
@@ -2031,6 +2032,27 @@ function mountRegister(root) {
       $("dialog").close();
       actions["estimate-import"](id);
     },
+    "estimate-document": key => {
+      const [id,revision] = key.split(":");
+      const estimate = find(db.estimates || [],id);
+      const issued = revision === "draft" ? estimate : estimate?.versions?.[Number(revision)];
+      if (!issued) throw Error("Estimate version unavailable.");
+      const template = window.retinaEstimateFormat;
+      if (!template) throw Error("Estimate format could not load. Reload Retina and try again.");
+      const format = (html, fields) => html.replace(/\{\{(\w+)\}\}/g, (_, field) => esc(fields[field] ?? ""));
+      const title = "BILL OF QUANTITIES FOR LIGHT FITTINGS · " + issued.name.toUpperCase() +
+        " · " + estimate.ref + (revision === "draft" ? " · DRAFT" : " · " + estimateVersion(issued).toUpperCase());
+      const date = issued.issuedAt ? new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata"}).format(new Date(issued.issuedAt)) : "";
+      const lines = issued.items.map(item => format(template.line,{
+        0:item.circuit, 1:item.sourceArticle || item.sku, 3:item.lengthMm ? item.lengthMm + " mm" : "",
+        4:item.sku, 16:item.count.toFixed(2), 19:money(item.cents / 100), 20:money(item.count * item.cents / 100)
+      })).join("");
+      const documentHTML = format(template.head,{TITLE:title,DATE:date}) + lines +
+        format(template.tail,{TOTAL:money(estimateTotal(issued.items) / 100)}) + template.end;
+      const url = URL.createObjectURL(new Blob([documentHTML],{type:"text/html;charset=utf-8"}));
+      window.open(url,"_blank","noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url),60000);
+    },
     "estimate-history": key => {
       const [id,revision] = key.split(":");
       const estimate = find(db.estimates || [],id);
@@ -2038,7 +2060,7 @@ function mountRegister(root) {
       if (!issued) return;
       $("dialog").close();
       modal(estimate.ref + " · " + estimateVersion(issued),`<p>${esc(issued.name)} · ${esc(issued.issuedAt)}</p>` +
-        estimateLines(issued.items) + `<p>Total · ${money(estimateTotal(issued.items) / 100)}</p>` + btn("Print estimate","print-document"));
+        estimateLines(issued.items) + `<p>Total · ${money(estimateTotal(issued.items) / 100)}</p>` + btn("Open printable estimate","estimate-document",key));
     },
     "estimate-view": id => {
       const estimate = find(db.estimates || [],id);
@@ -2046,6 +2068,7 @@ function mountRegister(root) {
       const issued = estimate.versions?.at(-1);
       modal(estimate.ref + " · " + estimate.name,
         estimateLines(estimate.items) + `<p>Total · ${money(estimateTotal(estimate.items) / 100)}</p>` +
+        btn("Open printable estimate","estimate-document",id + ":" + (issued?.revision ?? "draft")) +
         (estimate.versions?.length ? "<h3>Issued versions</h3>" + estimate.versions.map(version =>
           btn(estimateVersion(version),"estimate-history",id + ":" + version.revision)).join(" ") : "") +
         (!estimate.payment ? '<div class="row">' + btn(issued ? "Issue next revision" : "Issue version 1","estimate-issue",id) +
