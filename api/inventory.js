@@ -113,19 +113,22 @@ export default async function handler(req,res) {
       if(result.state && !manufacturing) {
         const d=result.state;
         const stockView=purchasing ? {ingredients:d.ingredients,batches:d.batches,activity:d.activity} : {};
-        const salesView=sales ? {sales:d.sales,estimates:d.estimates||[],invoices:d.invoices||[]} : {};
+        const salesView=sales ? {billingProducts:(d.menu||[]).map(({id,code,name,price})=>({id,code,name,price})),sales:d.sales,estimates:d.estimates||[],invoices:d.invoices||[]} : {};
         result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
       }
       return res.json({...result,canWrite,canSeed:access.admin,email,
         ...(action === "productionLoad" && manufacturing ? {housingData} : {})});
     }
     if(action==='catalog') {
-      if(!canSee('manufacturing') && !canSee('purchase')) return res.status(403).json({error:'Catalogue stock access is restricted to Manufacturing or Purchase.'});
+      const canReadStock=canSee('manufacturing') || canSee('purchase');
+      if(!canReadStock && !canSee('sales')) return res.status(403).json({error:'Catalogue access denied.'});
       const [products,stock,...catalogs]=await Promise.all([
-        readTab(sheets,spreadsheetId,'Products'),readTab(sheets,spreadsheetId,'Stock'),
+        readTab(sheets,spreadsheetId,'Products'),canReadStock ? readTab(sheets,spreadsheetId,'Stock') : [],
         ...CATALOG_TABS.map(async name => { try { return await readTab(sheets,spreadsheetId,name); } catch(e) { if(e?.code===400 || e?.response?.status===400) return []; throw e; } })
       ]);
-      return res.json({products,stock,catalogs:Object.fromEntries(CATALOG_TABS.map((name,i)=>[name,catalogs[i]]))});
+      const fields=['SKU','Product Name','Selling Price','Unit Price','Price','Number','S#','S #','S.No','S No','Status'];
+      const publicProduct=row=>Object.fromEntries(fields.filter(field=>Object.hasOwn(row,field)).map(field=>[field,row[field]]));
+      return res.json({products:canReadStock ? products : products.map(publicProduct),stock,catalogs:Object.fromEntries(CATALOG_TABS.map((name,i)=>[name,canReadStock ? catalogs[i] : catalogs[i].map(publicProduct)]))});
     }
     if(action==='saveProduct') {
       const role=String(employee.Role||employee.role||'').trim().toLowerCase();

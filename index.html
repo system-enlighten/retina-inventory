@@ -1872,7 +1872,8 @@ function mountRegister(root) {
     const footer = doc.invoice ? `<div style="padding:16px;font:14px Arial"><p>Dispatch ${esc(doc.invoice.dispatchRef)}</p>
       <p>${esc(doc.invoice.note || "")}</p><p>Advance applied · ${esc(money(doc.invoice.advanceCents / 100))}</p><p>Balance before tax · ${esc(money(invoiceBalance(doc.invoice) / 100))}</p></div>` : "";
     return format(template.head,{TITLE:title.toUpperCase(),DATE:date}).replace(/<div class="toolbar">.*?<\/div>/,"") + lines +
-      format(template.tail,{TOTAL:money(estimateTotal(doc.items) / 100)}) + template.end.replace("</html>",footer + "</html>");
+      format(template.tail,{TOTAL:money(estimateTotal(doc.items) / 100)}) +
+      (footer ? `<tr><td colspan="${template.columnCount}">${footer}</td></tr>` : "") + template.terms + template.end;
   }
 
   function estimatesPage(invoices) {
@@ -1922,6 +1923,35 @@ function mountRegister(root) {
       `<tr><td>${esc(item.sku)}</td><td>${sourceLocation(item)}</td><td>${cutLength(item)}</td><td>${item.count}</td><td>${money(item.cents / 100)}</td></tr>`).join(""));
   }
 
+  function billingCatalogue() {
+    const products = new Map(legacyProducts.map(item => [item.code.toUpperCase(),item]));
+    for (const item of db.billingProducts || db.menu) {
+      if (item.code) products.set(item.code.toUpperCase(),item);
+    }
+    return products;
+  }
+
+  const billingSku = (index,sku = "",required = true) =>
+    input("sku"+index,"Product SKU or name",sku,"text","list='billing-product-options' maxlength='100'" + (required ? " required" : ""));
+  const billingPrice = (index,price = "",required = true) =>
+    input("price"+index,"Price / unit",price,"number","min='0.01' step='0.01'" + (required ? " required" : ""));
+
+  function attachBillingCatalogue() {
+    const form = $("dialog").querySelector("form");
+    const products = billingCatalogue();
+    const list = document.createElement("datalist");
+    list.id = "billing-product-options";
+    for (const [sku,item] of products) list.append(new Option(item.name,sku));
+    form.append(list);
+    form.addEventListener("change", event => {
+      const match = event.target.name?.match(/^sku(\d+)$/);
+      if (!match) return;
+      const item = products.get(event.target.value.trim().toUpperCase());
+      const price = form.elements["price"+match[1]];
+      if (item && Number(item.price) > 0 && !price.value) price.value = item.price;
+    });
+  }
+
   function reviseEstimate(estimate, output, draft = false) {
     const revision = estimate?.versions?.length || 0;
     const source = output || estimate?.source;
@@ -1930,17 +1960,19 @@ function mountRegister(root) {
       input("name","Project name",output?.projectName || estimate?.name,"text","required maxlength='120'") +
       grid(["Source article / circuit","Cut length","Ordering SKU","Qty","Unit price"],items.map((item,index) =>
         `<tr><td>${esc(item.sourceArticle || item.sku)}<br>${sourceLocation(item)}</td><td>${cutLength(item)}</td>
-        <td>${input("sku"+index,"SKU",item.sku,"text","required maxlength='100'")}</td>
+        <td>${billingSku(index,item.sku)}</td>
         <td>${input("count"+index,"Units",item.count,"number","required min='1' max='1000000' step='1'")}</td>
-        <td>${input("price"+index,"Price / unit",item.cents ? item.cents / 100 : "","number","required min='0.01' step='0.01'")}</td></tr>`).join("")),
+        <td>${billingPrice(index,item.cents ? item.cents / 100 : "")}</td></tr>`).join("")),
       form => {
         const lines = [...items];
         while (form.has("sku"+lines.length)) lines.push({});
         return saveEstimate(draft ? (estimate ? "estimateEdit" : "estimateSave") : "estimateIssue",
           {id:estimate?.id || crypto.randomUUID(),revision,source,name:required(form,"name"),
             items:lines.map((item,index) => ({...item,sku:required(form,"sku"+index),count:number(read(form,"count"+index),1),
+              name:billingCatalogue().get(read(form,"sku"+index).toUpperCase())?.name || (read(form,"sku"+index) === item.sku ? item.name : ""),
               cents:number(read(form,"price"+index),100)}))});
       },draft ? "Save draft" : "Issue estimate");
+    attachBillingCatalogue();
     if (draft) {
       const table = $("dialog").querySelector("tbody");
       let index = items.length;
@@ -1948,8 +1980,8 @@ function mountRegister(root) {
       add.type = "button"; add.className = "btn"; add.textContent = "+ Add line";
       add.onclick = () => {
         if (index >= 300) return;
-        table.insertAdjacentHTML("beforeend",`<tr><td></td><td></td><td>${input("sku"+index,"SKU")}</td>
-          <td>${amount("count"+index,"Units",1)}</td><td>${input("price"+index,"Price / unit","","number","required min='0.01' step='0.01'")}</td></tr>`);
+        table.insertAdjacentHTML("beforeend",`<tr><td></td><td></td><td>${billingSku(index)}</td>
+          <td>${amount("count"+index,"Units",1)}</td><td>${billingPrice(index)}</td></tr>`);
         index++;
       };
       table.closest(".scroll").after(add);
@@ -2117,8 +2149,33 @@ function mountRegister(root) {
     },
     "invoice-edit": key => {
       const {invoice} = selectedDocument(key);
-      modal("Edit Invoice",input("note","Invoice note",invoice.note || "","text","maxlength='250'"), form =>
-        saveEstimate("invoiceEdit",{id:invoice.id,note:read(form,"note")}));
+      const editable = (!invoice.status || invoice.status === "Draft") && !invoice.payments?.length;
+      const row = index => `<tr><td>${billingSku(index,"",false)}</td><td>${amount("count"+index,"Units",1)}</td>
+        <td>${billingPrice(index,"",false)}</td></tr>`;
+      modal("Edit Invoice",input("note","Invoice note",invoice.note || "","text","maxlength='250'") +
+        estimateLines(invoice.lines.map(line => ({...line,sku:line.code || line.name,cents:Math.round(line.price * 100)}))) +
+        (editable ? empty("Add billing-only products to this draft. Stock dispatch is recorded separately.") +
+          grid(["Product","Quantity","Unit price"],row(0)) : ""),form => {
+        const products = billingCatalogue();
+        const lines = [];
+        for (let index = 0; form.has("sku"+index); index++) {
+          const sku = read(form,"sku"+index).toUpperCase();
+          if (!sku && !read(form,"price"+index)) continue;
+          const product = products.get(sku);
+          if (!product) throw Error("Select an invoice product from the database.");
+          lines.push({sku,name:product.name,count:number(read(form,"count"+index),1),cents:number(read(form,"price"+index),100)});
+        }
+        return saveEstimate("invoiceEdit",{id:invoice.id,note:read(form,"note"),lines,expectedSubtotal:invoice.subtotalCents});
+      });
+      if (editable) {
+        attachBillingCatalogue();
+        const table = $("dialog").querySelectorAll("tbody")[1];
+        const add = document.createElement("button");
+        add.type = "button"; add.className = "btn"; add.textContent = "+ Add product";
+        let index = 1;
+        add.onclick = () => { if (index < 300) table.insertAdjacentHTML("beforeend",row(index++)); };
+        table.closest(".scroll").after(add);
+      }
     },
     "billing-convert": key => {
       const doc = selectedDocument(key);

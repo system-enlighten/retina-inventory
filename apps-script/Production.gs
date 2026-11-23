@@ -80,6 +80,25 @@ function retinaEstimateMutation_(state, input) {
     var invoice = (state.invoices || []).find(function(row) { return row.id === data.id; });
     if (!invoice) throw Error('Invoice not found.');
     if (input.action === 'invoiceEdit') {
+      if (Array.isArray(data.lines) && data.lines.length) {
+        if ((invoice.status && invoice.status !== 'Draft') || (invoice.payments || []).length)
+          throw Error('Products can only be added to a draft invoice before payments are recorded.');
+        if (invoice.subtotalCents !== data.expectedSubtotal) throw Error('Reload the invoice before adding products.');
+        if (data.lines.length > 300) throw Error('Add up to 300 products at a time.');
+        var addedCents = 0;
+        var added = data.lines.map(function(line) {
+          var sku = String(line.sku || '').trim().toUpperCase();
+          var name = String(line.name || '').trim().slice(0,160);
+          if (!sku || sku.length > 100 || !name || !Number.isSafeInteger(line.count) || line.count < 1 || line.count > 1000000 ||
+              !Number.isSafeInteger(line.cents) || line.cents < 1 || line.cents > 100000000)
+            throw Error('Each product needs a SKU, quantity and unit price.');
+          addedCents += line.count * line.cents;
+          return {code:sku,name:name,count:line.count,price:line.cents/100,billingOnly:true};
+        });
+        if (!Number.isSafeInteger(invoice.subtotalCents + addedCents)) throw Error('Invoice total is too large.');
+        invoice.lines = invoice.lines.concat(added);
+        invoice.subtotalCents += addedCents;
+      }
       invoice.note = String(data.note || '').trim().slice(0,250);
       return invoice;
     }
@@ -116,7 +135,7 @@ function retinaEstimateMutation_(state, input) {
       var kind = item.kind === 'Linear' ? 'Linear' : 'Basic';
       if (kind === 'Linear' && (!Number.isSafeInteger(item.lengthMm) || item.lengthMm < 1 || item.lengthMm > 1000000))
         throw Error('Every linear line needs a valid cut length in millimetres.');
-      return {sku:sku,count:item.count,cents:item.cents,kind:kind,lengthMm:kind === 'Linear' ? item.lengthMm : null,
+      return {sku:sku,name:String(item.name || "").slice(0,160),count:item.count,cents:item.cents,kind:kind,lengthMm:kind === 'Linear' ? item.lengthMm : null,
         sourceArticle:String(item.sourceArticle || '').slice(0,100),circuit:String(item.circuit || '').slice(0,100),
         floor:String(item.floor || '').slice(0,100),zone:String(item.zone || '').slice(0,100)};
     });
