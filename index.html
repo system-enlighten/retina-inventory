@@ -735,11 +735,11 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings"];
+  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates"];
   const departments = [
-    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
+    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6,7]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
-    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[3,5]},
+    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[8,3,5]},
     {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
     {id:"accounts", name:"Accounts", scope:"Ledger, payments and reporting", pages:[]},
     {id:"legal", name:"Patent & Legal Team", scope:"Patents, IP and contracts", pages:[]},
@@ -953,9 +953,10 @@ function mountRegister(root) {
   const division = group => /driver|control gear/i.test(group) ? "Driver"
     : /led/i.test(group) ? "LED" : /housing|downlight|surface|spotlight|outdoor/i.test(group) ? "Housing" : "Other";
 
-  function productCards(items) {
+  function productCards(items, {components = true} = {}) {
     const state = catalogState[page];
-    const categories = divisions.filter(group => group !== "Other" || items.some(item => item.group === group));
+    const categories = divisions.filter(group => (components || !["LED", "Driver"].includes(group))
+      && (group !== "Other" || items.some(item => item.group === group)));
     if (!categories.includes(state.category) && state.category) state.category = "";
     const buttons = ["", ...categories].map(group => {
       const count = group ? items.filter(item => item.group === group).length : items.length;
@@ -1146,20 +1147,22 @@ function mountRegister(root) {
 
   // Tab 01: Assembly Floor & POS
   function dining() {
-    const current = find(db.tables, selected);
-    const open = db.tables.filter(t => t.lines.length).length;
+    const active = find(db.tables, selected);
+    const current = active && (!isProject(active) || active.checkId || active.kotSent || active.builtAt) ? active : null;
     const todayDispatches = db.sales.filter(s => s.date === day() && s.currency === db.currency);
-    const areas = [...new Set([...workshopAreas, ...db.tables.map(t => t.area)])];
+    const stations = db.tables.filter(t => !isProject(t) || t.checkId || t.kotSent || t.builtAt);
+    const open = stations.filter(t => t.lines.length).length;
+    const areas = [...new Set([...workshopAreas, ...stations.map(t => t.area)])];
 
     const plan = areas.map(area => {
-      const tables = db.tables.filter(t => t.area === area);
+      const tables = stations.filter(t => t.area === area);
       const available = tables.filter(t => !t.lines.length).length;
       return `<section class="plan-zone"><div class="zone-title row between"><h3 class="area draft">${esc(floorAreaLabel(area))}</h3><p class="draft">${available} / ${tables.length} benches open</p></div>
         ${tables.length ? areaTables(tables) : empty("No workbenches in this bay.")}</section>`;
     }).join("");
 
     const legend = '<ul class="row plan-legend" aria-label="Workbench status"><li><span class="swatch"></span>Available</li><li><span class="swatch occupied"></span>Active Job</li><li><span class="swatch current"></span>Selected</li></ul>';
-    const dishes = staffCatalog({ ordering: true, canOrder: Boolean(current && !current.builtAt) });
+
 
     let shortage = "";
     if(current?.lines.length) {
@@ -1169,7 +1172,7 @@ function mountRegister(root) {
 
     const lines = current?.lines.map(l => `<div class="row between line">
       <span>${l.count} × ${esc(l.name)} · ${money(l.count * l.price)}${l.group ? `<small class="line-category">${esc(l.group)}</small>` : ""}</span>
-      ${current.builtAt ? "" : `<div class="row">${btn("−", "minus", l.id, "mini")}${btn("+", "plus", l.id, "mini")}</div>`}
+      ${(current.builtAt || current.productionSheetId) ? "" : `<div class="row">${btn("−", "minus", l.id, "mini")}${btn("+", "plus", l.id, "mini")}</div>`}
     </div>`).join("");
 
     const check = (current ? `<div class="row between"><small>${esc(floorAreaLabel(current.area))} · ${current.seats} Tech Stations · ${manufacturingStatus(current)}</small>${btn("Edit bench", "table", current.id, "mini")}</div>` : "") +
@@ -1177,13 +1180,12 @@ function mountRegister(root) {
         ${shortage ? `<p class="error"><b>Component shortage:</b> ${esc(shortage)}</p>` : current.builtAt
           ? btn("Dispatch order", "checkout", current.id, "primary")
           : manufacturingStatus(current) === "In production" ? btn("Mark built", "mark-built", current.id, "primary") : ""}` :
-        empty("Select a luminaire below to assign to this workbench.") + kotControls(current));
+        empty("Send a production sheet from Projects to this workbench.") + kotControls(current));
 
-    return heading("01 / Assembly floor & POS", "Production floor", "Select a workbench and add luminaires. Issue the job card, mark the order built, then dispatch.", btn("+ Workbench / Project", "table", "", "primary")) +
-      stats([["Active Workbenches", open], ["Available Benches", db.tables.length - open], ["Station Capacity", sum(db.tables.map(t => t.seats))], ["Dispatches today", money(sum(todayDispatches.map(s => s.total))) + " (" + todayDispatches.length + ")"]]) +
-      `<div class="split"><div>${panel("01A", "Workbenches & Projects", legend + plan, "plan")}</div>
-      ${panel("01C", esc(current?.name || "Current Station Check"), check)}</div>
-      ${panel("01B", "Select Products", dishes)}`;
+    return heading("01 / Assembly floor & POS", "Production floor", "Open an assigned production sheet at its workbench, issue the job card, build, then dispatch.", canWrite ? btn("+ Workbench", "table", "", "primary") : "") +
+      stats([["Active Workbenches", open], ["Available Benches", stations.length - open], ["Station Capacity", sum(stations.map(t => t.seats || 0))], ["Dispatches today", money(sum(todayDispatches.map(s => s.total))) + " (" + todayDispatches.length + ")"]]) +
+      `<div class="split"><div>${panel("01A", "Workbenches", legend + plan, "plan")}</div>
+      ${panel("01C", esc(current?.name || "Current Station Check"), check)}</div>`;
   }
 
   // Storage Map
@@ -1325,7 +1327,9 @@ function mountRegister(root) {
           ? `<button type="button" class="btn primary" data-action="add" data-id="${esc(dish.id)}" ${enabled ? "" : "disabled"}>+ Add</button>`
           : btn("Edit BOM","dish",dish.id) };
     });
-    return productCards([...production, ...legacyCards(production,false,ordering)]);
+    const products = [...production, ...legacyCards(production,false,ordering)]
+      .filter(item => !["LED", "Driver"].includes(item.group));
+    return productCards(products, {components:false});
   }
 
   // Tab 03: BOM & Specifications
@@ -1591,13 +1595,15 @@ function mountRegister(root) {
         : panel("Production", "Connect to the production register to continue.", `<p>${btn("Retry connection","reload-production")}</p>`));
       return;
     }
-    if(page === 0) screen.insertAdjacentHTML("beforeend", dining());
+    if(page === 0) screen.insertAdjacentHTML("beforeend", projectOrder());
     else if(page === 1) screen.insertAdjacentHTML("beforeend", inventory());
     else if(page === 2) screen.insertAdjacentHTML("beforeend", recipes());
     else if(page === 3) screen.insertAdjacentHTML("beforeend", catalogue());
     else if(page === 4) screen.insertAdjacentHTML("beforeend", nomenclature());
     else if(page === 5) screen.insertAdjacentHTML("beforeend", sales());
     else if(page === 6) screen.insertAdjacentHTML("beforeend", settings());
+    else if(page === 7) screen.insertAdjacentHTML("beforeend", dining());
+    else if(page === 8) screen.insertAdjacentHTML("beforeend", estimatesPage());
   }
 
   // Recipe row in BOM editor
@@ -1615,7 +1621,7 @@ function mountRegister(root) {
 
   function addOrderProduct(data, tableId, product) {
     const table = find(data.tables, tableId);
-    if (!table || !product || table.builtAt) throw Error("Select an available workbench and product.");
+    if (!table || !product || table.builtAt || table.productionSheetId) throw Error("Select an available workbench and product.");
     const line = table.lines.find(row => row.dish === product.id && (!product.configuration || row.bomRevision === product.bomRevision));
     if (line) line.count++;
     else table.lines.push({id:uid(),dish:product.id,name:product.name,group:product.group,
@@ -1633,10 +1639,25 @@ function mountRegister(root) {
     }).join("")}</ul>`;
   }
 
-  function componentLabel(group, id) {
-    if (!id) return "Not specified";
-    const rows = housingData[group][id] || [];
-    return `${id} · ${rows.length ? rows.map(row => row.filter(Boolean).join(" / ")).join(" | ") : "Source record missing"}${rows.length > 1 ? " · Ambiguous article number" : ""}`;
+  function configurationTable(name, title, columns, entries, selected) {
+    const rows = entries.map(([id, records]) => records.map((record, index) => {
+      const label = id ? `${title} ${id}` : `${title} not specified`;
+      const selectable = index === 0;
+      return `<tr><td>${selectable
+        ? `<input type="radio" name="${name}" value="${esc(id)}" aria-label="${esc(label)}" ${id === selected ? "checked" : ""}>` : ""}</td>
+        <th scope="row">${esc(id || "—")}</th>
+        ${columns.map((_, i) => `<td>${esc(record[i] || "—")}</td>`).join("")}
+        </tr>`;
+    }).join("")).join("");
+    return `<fieldset class="housing-config-table"><legend>${esc(title)}</legend>
+      ${rows ? grid(["Select", "Article / sequence", ...columns], rows) : empty("No recorded matches.")}</fieldset>`;
+  }
+
+  function componentRows(group, ids) {
+    return ids.map(id => {
+      const records = housingData[group][id];
+      return [id, records?.length ? records : [[id ? "Source record missing" : "Not specified"]]];
+    });
   }
 
   function configureHousing(item, tableId) {
@@ -1645,13 +1666,18 @@ function mountRegister(root) {
     const candidates = finished ? [[item.code, "", "", ""]] : housing.options;
     const choices = [...new Set(candidates.map(row => row[1]))];
     const variants = [...new Set([...Object.keys(housing.variants), ...choices])];
-    const variantLabel = code => `${code || "No variant specified"}${housing.variants[code]?.some(Boolean) ? " · " + housing.variants[code].filter(Boolean).join(" / ") : ""}`;
-    const variantSelect = options("housing-variant", "Housing variant", variants.map(code => [code, variantLabel(code)]), choices[0] ?? variants[0]);
+    let variant = choices[0] ?? variants[0] ?? "";
+    let led = "", driver = "";
+    const variantRows = variants.map(code => [code, [housing.variants[code] || []]]);
+    const variantTable = variants.length && !finished ? configurationTable(
+      "housing-variant", "Housing variant",
+      ["Beam angle", "Mounting trim", "Reflector colour", "Body colour", "Mount"], variantRows, variant
+    ) : "";
     const fallback = housing.parts.map(part => [...part, []]);
     const sourceTree = housing.tree.length ? housing.tree : fallback;
     modal("Configure " + item.name, `
       <p><b>${esc(item.code)}</b> · ${esc(housing.spec.join(" · ") || item.spec)}</p>
-      <div class="fields">${variants.length ? variantSelect : ""}<div id="housing-led"></div><div id="housing-driver"></div></div>
+      ${variantTable}<div id="housing-led"></div><div id="housing-driver"></div>
       <div id="housing-selection" aria-live="polite"></div>
       <details open><summary><strong>Housing BOM · source reference</strong></summary>
       ${sourceTree.length ? bomTree(sourceTree) : empty("No assembly BOM was found in the sheet for this housing.")}
@@ -1659,27 +1685,36 @@ function mountRegister(root) {
       </details>
       ${housing.accessories?.length ? `<details><summary>Variant parts and accessories</summary>${bomTree(housing.accessories)}</details>` : ""}
     `);
-    const form = $("dialog").querySelector("form");
-    const variant = form.elements["housing-variant"];
+    const dialog = $("dialog");
+    dialog.classList.add("housing-config-dialog");
+    const form = dialog.querySelector("form");
     const ledSlot = $("housing-led"), driverSlot = $("housing-driver"), resultSlot = $("housing-selection");
+
     function refresh(change) {
-      const byVariant = candidates.filter(row => row[1] === (variant?.value || ""));
-      if (change !== "housing-driver" && change !== "housing-config-code") {
-        if (change !== "housing-led") {
-          const leds = [...new Set(byVariant.map(row => row[2]))];
-          ledSlot.innerHTML = leds.length ? options("housing-led-choice", "LED · sheet matches", leds.map(id => [id,componentLabel("led",id)]), leds[0]) : "";
+      const byVariant = candidates.filter(row => row[1] === variant);
+      const leds = [...new Set(byVariant.map(row => row[2]))];
+      if (!leds.includes(led)) led = leds[0];
+      const drivers = [...new Set(byVariant.filter(row => row[2] === led).map(row => row[3]))];
+      if (!drivers.includes(driver)) driver = drivers[0];
+      if (!finished && change !== "housing-config-code") {
+        if (change !== "housing-led" && change !== "housing-driver") {
+          ledSlot.innerHTML = configurationTable("housing-led", "LED",
+            ["Product code", "Size (mm)", "Power", "Current", "Voltage", "CCT", "CRI"], componentRows("led", leds), led);
         }
-        const drivers = [...new Set(byVariant.filter(row => row[2] === form.elements["housing-led-choice"]?.value).map(row => row[3]))];
-        driverSlot.innerHTML = drivers.length ? options("housing-driver", "Driver · sheet matches", drivers.map(id => [id,componentLabel("drivers",id)]), drivers[0]) : "";
+        if (change !== "housing-driver") {
+          driverSlot.innerHTML = configurationTable("housing-driver", "Driver",
+            ["Product code", "CV / CC", "Voltage", "Current", "Load", "Control", "IP", "Make"], componentRows("drivers", drivers), driver);
+        }
       }
-      const matches = byVariant.filter(row => row[2] === form.elements["housing-led-choice"]?.value && row[3] === form.elements["housing-driver"]?.value);
-      const chosen = matches.find(row => row[0] === form.elements["housing-config-code"]?.value) || matches[0];
+      const matches = byVariant.filter(row => row[2] === led && row[3] === driver);
+      const chosen = (change === "housing-config-code"
+        ? matches.find(row => row[0] === form.elements["housing-config-code"]?.value) : null) || matches[0];
       if (!chosen) {
         resultSlot.innerHTML = empty("No LED and driver combination is recorded for this variant.");
         return;
       }
-      const [code, v, led, driver] = chosen;
-      const configuration = {housing:item.id, variant:v, led, driver, code, finished};
+      const [code, v, selectedLed, selectedDriver] = chosen;
+      const configuration = {housing:item.id, variant:v, led:selectedLed, driver:selectedDriver, code, finished};
       const registered = db.menu.find(product => sameHousingConfiguration(product.configuration, configuration));
       const unresolved = !finished && (!led || !driver || housingData.led[led]?.length !== 1 || housingData.drivers[driver]?.length !== 1
         || (v && !housing.variants[v]));
@@ -1694,7 +1729,7 @@ function mountRegister(root) {
       if (!canWrite || unresolved) return;
       const action = $("housing-config-action");
       if (registered && tableId) {
-        action.innerHTML = '<button type="button" class="btn primary">Add to workbench</button>';
+        action.innerHTML = '<button type="button" class="btn primary">Add to project</button>';
         action.firstElementChild.onclick = async event => {
           const button = event.currentTarget;
           button.disabled = true;
@@ -1717,16 +1752,171 @@ function mountRegister(root) {
         };
       }
     }
-    form.addEventListener("change", event => refresh(event.target.name === "housing-led-choice" ? "housing-led" : event.target.name));
+    form.addEventListener("change", event => {
+      const {name, value} = event.target;
+      if (name === "housing-variant") { variant = value; led = ""; driver = ""; }
+      if (name === "housing-led") { led = value; driver = ""; }
+      if (name === "housing-driver") driver = value;
+      if (name.startsWith("housing-")) refresh(name);
+    });
     refresh("");
+    const selectedVariant = form.querySelector('[name="housing-variant"]:checked');
+    if (selectedVariant) {
+      const scroll = selectedVariant.closest(".scroll");
+      scroll.scrollTop = Math.max(0, selectedVariant.closest("tr").offsetTop - scroll.clientHeight / 2);
+    }
   }
 
   function sameHousingConfiguration(a,b) {
     return a && ["housing","variant","led","driver","code","finished"].every(key => a[key] === b[key]);
   }
 
+  function isProject(record) {
+    return record.recordType === "project" || stationKind(record) !== "Industrial workbench";
+  }
+
+  function requireProject(data, id) {
+    const project = find(data.tables, id);
+    if (!project || !isProject(project)) throw Error("Select a project first.");
+    if (project.builtAt || project.kotSent || project.checkId) throw Error("Finish this existing job from Workbenches first.");
+    return project;
+  }
+
+  function projectOrder() {
+    const projects = db.tables.filter(isProject);
+    const project = find(projects, selected);
+    const sheets = (db.productionSheets || []).filter(sheet => sheet.projectId === project?.id);
+    const list = projects.map(entry => btn(entry.name, "select", entry.id, entry.id === selected ? "primary" : "")).join(" ");
+    const lines = project?.lines.map(line => `<div class="row between line">
+      <span>${esc(line.count)} × ${esc(line.name)}</span>
+      ${canWrite ? btn("−", "minus", line.id, "mini") + btn("+", "plus", line.id, "mini") : ""}
+    </div>`).join("");
+    const sheetList = sheets.map(sheet => `<div class="row between line">
+      <span>${esc(sheet.ref)} · ${esc(sheet.status)}${sheet.bench ? " · " + esc(sheet.bench) : ""}</span>
+      ${btn("Open sheet", "production-sheet", sheet.id)}</div>`).join("");
+    return heading("","Projects","Add configured products or open a production sheet from a paid Sales estimate.",
+      canWrite ? btn("+ Add Project","project-new","","primary") : "") +
+      panel("","Project register",list || empty("No projects yet.")) +
+      (project ? panel("",esc(project.name), (lines || empty("No products staged for a new sheet.")) +
+      (canWrite && lines ? btn("Create Production Sheet","production-sheet-create",project.id,"primary") : "") +
+      "<h3>Production sheets</h3>" + (sheetList || empty("No production sheets yet."))) +
+      panel("","Select Products",staffCatalog({ordering:true,canOrder:canWrite && !project.checkId && !project.builtAt})) : "");
+  }
+
+  function estimatesPage() {
+    const estimates = db.estimates || [];
+    const list = estimates.map(estimate => `<div class="row between line">
+      <span><strong>${esc(estimate.ref)}</strong> · ${esc(estimate.name)} · ${money(estimate.items.reduce((sum,item) => sum + item.cents * item.count,0) / 100)}
+      · ${estimate.payment ? "Paid · production sheet created" : "Awaiting payment"}</span>
+      ${btn("View Estimate","estimate-view",estimate.id)}</div>`).join("");
+    return heading("","Estimates","Record payment to create a project and draft production sheet.",
+      btn("+ Add Estimate","estimate-new","","primary")) + panel("","Sales estimates",list || empty("No estimates yet."));
+  }
+
+  async function saveEstimate(action, estimate) {
+    await productionRequest(action,{estimate});
+    await loadProduction();
+  }
+
   // Actions Dispatcher
   const actions = {
+    "project-new": () => modal("Add Project", input("name","Project name") +
+      options("kind","Project type",values(projectKinds),projectKinds[0]), form => update(data => {
+      const project = {id:uid(),name:required(form,"name"),kind:required(form,"kind"),recordType:"project",lines:[]};
+      data.tables.push(project);
+      selected = project.id;
+    })),
+    "production-sheet-create": id => update(data => {
+      const project = requireProject(data,id);
+      if (!project.lines.length || project.lines.some(line => !Object.keys(line.recipe || {}).length)) {
+        throw Error("Add products with approved BOMs before creating the production sheet.");
+      }
+      data.productionSheets ||= [];
+      data.productionSheets.push({id:uid(),projectId:id,name:project.name,
+        ref:"PS-" + String(data.productionSheets.length + 1).padStart(4,"0"),status:"Draft",
+        lines:project.lines,pending:[],createdAt:new Date().toISOString()});
+      project.lines = [];
+    }),
+    "production-sheet": id => {
+      const sheet = find(db.productionSheets || [],id);
+      if (!sheet) return;
+      const benches = db.tables.filter(bench => !isProject(bench) && !bench.lines.length && !bench.productionSheetId);
+      const pending = sheet.pending || [];
+      const requiredParts = new Map();
+      for (const line of sheet.lines) {
+        for (const [sku, quantity] of Object.entries(line.recipe || {})) {
+          requiredParts.set(sku,(requiredParts.get(sku) || 0) + quantity * line.count);
+        }
+      }
+      const rows = sheet.lines.map(line => `<tr><td>${esc(line.code || line.name)}</td><td>${esc(line.count)}</td><td>${esc(line.bomRevision || "—")}</td>
+        <td>${Object.entries(line.recipe || {}).map(([sku,qty]) => `${esc(sku)} × ${esc(qty * line.count)}`).join("<br>")}</td></tr>`).join("");
+      modal(sheet.ref + " · " + sheet.name, `<p>${esc(sheet.status)}${sheet.bench ? " · " + esc(sheet.bench) : ""}</p>` +
+        grid(["Product","Quantity","BOM revision","Parts required"],rows) +
+        (requiredParts.size ? "<h3>Total parts required</h3>" +
+          grid(["Stockroom SKU","Quantity","Unit"],[...requiredParts].map(([sku,qty]) =>
+            `<tr><th scope="row">${esc(sku)}</th><td>${esc(qty)}</td><td>${esc(find(db.ingredients,sku)?.unit || "—")}</td></tr>`).join("")) : "") +
+        (pending.length ? "<h3>SKUs awaiting a unique product with an approved BOM</h3><ul>" +
+          pending.map(item => `<li>${esc(item.sku)} × ${esc(item.count)}</li>`).join("") + "</ul>" +
+          (canWrite ? btn("Match products again","production-sheet-match",id) : "") : "") +
+        (sheet.status === "Draft" && !pending.length ?
+          benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id,bench.name]),benches[0].id)
+            : empty("Create or free a workbench before sending this sheet.") : ""),
+        canWrite && sheet.status === "Draft" && sheet.lines.length && !pending.length && benches.length ? form => update(data => {
+          const current = find(data.productionSheets,id);
+          const bench = find(data.tables,required(form,"bench"));
+          if (!bench || isProject(bench) || bench.lines.length || bench.productionSheetId || current.status !== "Draft" || current.pending?.length)
+            throw Error("This sheet or workbench is no longer available.");
+          current.status = "Assigned";
+          current.bench = bench.name;
+          bench.lines = structuredClone(current.lines);
+          bench.productionSheetId = id;
+          bench.jobReference = current.ref;
+          if (current.paymentRequired) bench.jobType = "Sale";
+        }) : undefined,"Send to workbench");
+    },
+    "production-sheet-match": async id => {
+      await update(data => {
+        const sheet = find(data.productionSheets || [],id);
+        if (!sheet || sheet.status !== "Draft") throw Error("Open a draft production sheet first.");
+        sheet.pending = sheet.pending.filter(item => {
+          const matches = data.menu.filter(product => String(product.code || "").trim().toUpperCase() === item.sku && Object.keys(product.recipe || {}).length);
+          if (matches.length !== 1) return true;
+          const product = matches[0];
+          sheet.lines.push({id:uid(),dish:product.id,name:product.name,code:item.sku,group:product.group,count:item.count,
+            price:item.cents / 100,recipe:structuredClone(product.recipe),configuration:product.configuration,bomRevision:product.bomRevision});
+          return false;
+        });
+      });
+      $("dialog").close();
+      actions["production-sheet"](id);
+    },
+    "estimate-new": () => {
+      const id = crypto.randomUUID();
+      modal("Add Sales Estimate", input("name","Project name","","text","required maxlength='120'") +
+        '<label>Estimate lines<textarea name="items" required rows="6" placeholder="SKU, quantity, unit price"></textarea></label>' +
+        empty("Enter one line per product. Use the exact ordering SKU and a unit price in " + db.currency + "."), form => {
+          const items = required(form,"items").split(/\r?\n/).filter(line => line.trim()).map(line => {
+            const fields = line.split(",").map(value => value.trim());
+            if (fields.length !== 3 || !fields[0]) throw Error("Use SKU, quantity, unit price on each line.");
+            return {sku:fields[0],count:number(fields[1],1),cents:number(fields[2],100)};
+          });
+          return saveEstimate("estimateSave",{id,name:required(form,"name"),items});
+        });
+    },
+    "estimate-view": id => {
+      const estimate = find(db.estimates || [],id);
+      if (!estimate) return;
+      const amount = estimate.items.reduce((sum,item) => sum + item.cents * item.count,0);
+      modal(estimate.ref + " · " + estimate.name,
+        grid(["SKU","Quantity","Unit price"],estimate.items.map(item => `<tr><td>${esc(item.sku)}</td><td>${esc(item.count)}</td><td>${money(item.cents / 100)}</td></tr>`).join("")) +
+        `<p>Total · ${money(amount / 100)}</p>` +
+        (estimate.payment ? `<p>Paid · ${esc(estimate.payment.reference)}</p>` :
+          input("reference","Payment reference","","text","required maxlength='100'") +
+          input("paid","Amount received","","number","required min='0.01' step='0.01'")),
+        estimate.payment ? undefined : form => saveEstimate("estimatePayment",{id,reference:required(form,"reference"),cents:number(read(form,"paid"),100)}),
+        "Record payment & create sheet");
+    },
+
     "department-directory": () => {
       directoryOpen = !department || !directoryOpen;
       if (directoryOpen) note("");
@@ -1739,7 +1929,7 @@ function mountRegister(root) {
       department = next;
       page = department.pages[0] ?? -1;
       directoryOpen = false;
-      if (!loaded && department.pages.some(i => [0,1,2,5,6].includes(i))) {
+      if ((!loaded || department.id === "sales") && department.pages.some(i => [0,1,2,5,6,7,8].includes(i))) {
         loadProduction().catch(error => { if (!directoryOpen) note(error.message); });
       }
       render();
@@ -1749,6 +1939,11 @@ function mountRegister(root) {
       const next = Number(id);
       if (!department?.pages.includes(next)) return;
       page = next;
+      if (next === 0 && !isProject(find(db.tables,selected) || {})) selected = db.tables.find(isProject)?.id;
+      if (next === 7 && !db.tables.some(row => row.id === selected && !isProject(row))) {
+        selected = db.tables.find(row => !isProject(row))?.id;
+      }
+      if (!loaded && next !== 3 && next !== 4) loadProduction().catch(error => note(error.message));
       render();
     },
     select: id => { selected = id; render(); },
@@ -1773,8 +1968,7 @@ function mountRegister(root) {
       activePager?.focus({preventScroll:true});
     },
     "legacy-order": id => {
-      const table = find(db.tables, selected);
-      if (!table || table.builtAt) throw Error("Select an available workbench before adding a product.");
+      const table = requireProject(db, selected);
       const item = find(legacyProducts,id);
       if (housingRecord(item)) configureHousing(item,table.id);
       else actions.dish("", null, {item,tableId:table.id});
@@ -1826,13 +2020,13 @@ function mountRegister(root) {
     // Workbench modal
     table: id => {
       const t = id ? find(db.tables, id) : null;
-      modal(t ? "Edit Workbench / Project" : "Add Workbench / Project",
+      modal(t ? "Edit Workbench" : "Add Workbench",
         input("name", "Workbench / Station name", t?.name || "Workbench " + (db.tables.length + 1)) +
         options("area", "Factory Zone", values(workshopAreas), t?.area || workshopAreas[0]) +
-        options("kind", "Workbench or project type", values(["Industrial workbench", ...projectKinds]), t ? stationKind(t) : "Industrial workbench") +
+        
         input("seats", "Technician Stations", t?.seats || 4, "number", "required min='1' max='50'"),
         f => update(d => {
-          const name = required(f, "name"), area = required(f, "area"), kind = required(f, "kind");
+          const name = required(f, "name"), area = required(f, "area"), kind = t ? stationKind(t) : "Industrial workbench";
           const seats = number(read(f, "seats"), 1);
           const table = id ? find(d.tables, id) : { id: uid(), lines: [] };
           Object.assign(table, { name, area, kind, seats });
@@ -1842,16 +2036,16 @@ function mountRegister(root) {
     },
 
     // Add luminaire to active workbench
-    add: id => update(d => addOrderProduct(d, selected, find(d.menu,id))),
+    add: id => update(d => addOrderProduct(d, requireProject(d,selected).id, find(d.menu,id))),
 
     plus: id => update(d => {
       const table = find(d.tables, selected), line = find(table?.lines || [], id);
-      if(line && !table.builtAt) line.count++;
+      if(line && !table.builtAt && !table.productionSheetId) line.count++;
     }),
 
     minus: id => update(d => {
       const table = find(d.tables, selected), line = find(table?.lines || [], id);
-      if(line && !table.builtAt) {
+      if(line && !table.builtAt && !table.productionSheetId) {
         line.count--;
         if(!line.count) table.lines = table.lines.filter(l => l.id !== id);
       }
@@ -1934,6 +2128,8 @@ function mountRegister(root) {
         if (table.builtAt) throw Error("This order is already marked built.");
         allocate(d, table.lines, day());
         table.builtAt = new Date().toISOString();
+        const sheet = find(d.productionSheets || [],table.productionSheetId);
+        if (sheet) sheet.status = "Built";
       });
       note("Order marked built and ready to dispatch.");
     },
@@ -1969,6 +2165,7 @@ function mountRegister(root) {
               builtAt: t.builtAt,
               ref,
               table: t.name,
+              productionSheetId:t.productionSheetId,
               jobType: t.jobType || "",
               jobReference: t.jobReference || "",
               total: t.jobType === "Mock-up" ? 0 : total(t.lines),
@@ -1977,6 +2174,9 @@ function mountRegister(root) {
               kotIds: d.kots.filter(ticket => ticket.tableId === t.id && ticket.checkId === t.checkId).map(t => t.id)
             });
 
+            const sheet = find(d.productionSheets || [],t.productionSheetId);
+            if (sheet) { sheet.status = "Dispatched"; sheet.dispatchRef = ref; }
+            delete t.productionSheetId;
             delete t.kotSent;
             delete t.checkId;
             delete t.builtAt;
@@ -2885,6 +3085,14 @@ const styles = `
 .playcard-header,.playcard-footer{display:flex;justify-content:space-between;align-items:center;gap:7px;padding:8px 10px}
 .playcard-header{justify-content:flex-start;background:var(--blue);border-bottom:1px solid var(--rule)}
 .playcard-code{margin-left:auto;color:var(--rust)}
+dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
+.housing-config-table{min-width:0;margin:12px 0}
+.housing-config-table .scroll{max-height:260px;overflow:auto}
+.housing-config-table table{width:100%;min-width:max-content}
+.housing-config-table thead th{position:sticky;top:0;background:var(--blue);z-index:1}
+.housing-config-table :is(th,td){padding:7px 10px;white-space:nowrap}
+.housing-config-table tr:has(input:checked)>*{background:#e1ece7}
+.housing-config-table input[type=radio]{width:auto;margin:0;accent-color:#243d4b}
 .housing-bom-tree{padding-left:1.35em;margin:.5em 0}.housing-bom-tree li{margin:.3em 0}.housing-bom-tree span{color:var(--muted)}.housing-bom-tree summary{cursor:pointer}.configuration-review{width:auto}
 .playcard-image{position:relative;display:grid;place-items:center;height:104px;background:#fff;overflow:hidden}
 .playcard-image img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff}

@@ -82,16 +82,19 @@ export default async function handler(req,res) {
     const access=accessFor(employee);
     const canSee=id=>access.departments.includes(id);
     if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile?.name||email,departments:access.departments});
-    if(action==='productionLoad' || action==='productionSave') {
+    const estimateWrite = action === 'estimateSave' || action === 'estimatePayment';
+    if(action==='productionLoad' || action==='productionSave' || estimateWrite) {
       const manufacturing=canSee('manufacturing');
       const purchasing=canSee('purchase');
       const sales=canSee('sales');
       const canWrite=access.admin || (manufacturing && access.role==='store');
       if(!manufacturing && !purchasing && !sales) return res.status(403).json({error:'This department has no production register access.'});
+      if(estimateWrite && !sales) return res.status(403).json({error:'Sales access is required.'});
       if(action==='productionSave' && !canWrite) return res.status(403).json({error:'Only Admin or Manufacturing Store users can update production.'});
       const {RETINA_SCRIPT_URL:url, RETINA_SHARED_SECRET:secret}=process.env;
       if(!url || !secret) return res.status(503).json({error:'Apps Script is not configured.'});
       const payload={action,secret,email};
+      if(estimateWrite) payload.estimate=req.body.estimate;
       if(action==='productionSave') {
         const {state,revision}=req.body;
         if(!state || typeof state!=='object' || !Number.isSafeInteger(revision) || revision<0)
@@ -110,7 +113,7 @@ export default async function handler(req,res) {
       if(result.state && !manufacturing) {
         const d=result.state;
         const stockView=purchasing ? {ingredients:d.ingredients,batches:d.batches,activity:d.activity} : {};
-        const salesView=sales ? {sales:d.sales} : {};
+        const salesView=sales ? {sales:d.sales,estimates:d.estimates||[]} : {};
         result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
       }
       return res.json({...result,canWrite,canSeed:access.admin,email,
