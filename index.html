@@ -471,7 +471,7 @@ function mountRegister(root) {
 
   // Workshop Areas
   const workshopAreas = ["Assembly Bay · Ground Floor", "Project Staging & QA · 1st Floor"];
-  const floorAreaLabel = area => area.includes("Project") ? "Project Staging" : "Assembly Floor";
+  const floorAreaLabel = (area = "") => area.includes("Project") ? "Project Staging" : "Assembly Floor";
 
   // Workbench Shapes & Station layouts
 
@@ -737,7 +737,7 @@ function mountRegister(root) {
 
   const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates"];
   const departments = [
-    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6,7]},
+    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
     {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[8,3,5]},
     {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
@@ -939,14 +939,14 @@ function mountRegister(root) {
 
   let legacyProducts = mergeLegacyCatalogue(null);
 
-  function legacyCards(existing, inventoryView = false, ordering = false) {
+  function legacyCards(existing, inventoryView = false, ordering = false, canOrder = true) {
     const registered = new Set(db.ingredients.map(row => String(row.id).trim().toUpperCase()));
     const shown = new Set(existing.filter(row => !row.configuration).map(row => `${row.group}|${String(row.code || "").trim().toUpperCase()}`));
     return legacyProducts.filter(item => !item.aliases.some(sku => shown.has(`${item.group}|${sku}`)))
       .map(item => {
         const imported = item.aliases.some(sku => registered.has(sku));
         const action = inventoryView ? (!imported && canWrite ? btn("+ Add","import-legacy-component",item.id) : "")
-          : canWrite ? btn("+ Add",ordering ? "legacy-order" : "legacy-bom",item.id) : "";
+          : canWrite && (!ordering || canOrder) ? btn("+ Add",ordering ? "legacy-order" : "legacy-bom",item.id) : "";
         return {...item, status:inventoryView && Number.isFinite(item.balance) ? `Old stock · ${item.balance}` : "", action};
       });
   }
@@ -1051,10 +1051,10 @@ function mountRegister(root) {
 
   function floorTable(table) {
     const kind = stationKind(table);
-    return `<button class="btn tile floor-tile ${table.id === selected ? "active" : table.lines.length ? "open" : ""}"
+    return `<button class="btn tile floor-tile ${table.id === selected ? "active" : (table.lines.length || table.directLines?.length) ? "open" : ""}"
       data-action="select" data-id="${esc(table.id)}" aria-pressed="${table.id === selected}">
       ${stationIcon(kind)}<strong>${esc(table.name)}</strong>
-      <small>${esc(kind)} · ${manufacturingStatus(table)}</small>
+      <small>${esc(kind)} · ${table.directLines?.length ? "Stock dispatch pending" : manufacturingStatus(table)}</small>
       ${table.jobType ? `<small>${esc(table.jobType)}</small>` : ""}</button>`;
   }
 
@@ -1064,7 +1064,7 @@ function mountRegister(root) {
 
   // KOT / MOT (Manufacturing Order Ticket)
   const jobTypes = ["Sale", "Mock-up"];
-  const ticketType = record => record.jobType === "Mock-up" ? "Mock-up" : record.jobType === "Sale" ? "Sale" : "Unspecified";
+  const ticketType = record => [...jobTypes,"Direct stock dispatch"].includes(record.jobType) ? record.jobType : "Unspecified";
 
   function kotChanges(table) {
     const previous = new Map((table.kotSent || []).map(line => [line.id, line]));
@@ -1148,6 +1148,8 @@ function mountRegister(root) {
   // Tab 01: Assembly Floor & POS
   function dining() {
     const active = find(db.tables, selected);
+    const projects = db.tables.filter(isProject);
+    const project = active && isProject(active) ? active : null;
     const current = active && (!isProject(active) || active.checkId || active.kotSent || active.builtAt) ? active : null;
     const todayDispatches = db.sales.filter(s => s.date === day() && s.currency === db.currency);
     const stations = db.tables.filter(t => !isProject(t) || t.checkId || t.kotSent || t.builtAt);
@@ -1160,6 +1162,9 @@ function mountRegister(root) {
       return `<section class="plan-zone"><div class="zone-title row between"><h3 class="area draft">${esc(floorAreaLabel(area))}</h3><p class="draft">${available} / ${tables.length} benches open</p></div>
         ${tables.length ? areaTables(tables) : empty("No workbenches in this bay.")}</section>`;
     }).join("");
+
+    const projectPlan = `<section class="plan-zone"><div class="zone-title row between"><h3 class="area draft">Projects</h3>
+      <p class="draft">${projects.length} projects</p></div>${projects.length ? areaTables(projects) : empty("No projects yet.")}</section>`;
 
     const legend = '<ul class="row plan-legend" aria-label="Workbench status"><li><span class="swatch"></span>Available</li><li><span class="swatch occupied"></span>Active Job</li><li><span class="swatch current"></span>Selected</li></ul>';
 
@@ -1182,10 +1187,12 @@ function mountRegister(root) {
           : manufacturingStatus(current) === "In production" ? btn("Mark built", "mark-built", current.id, "primary") : ""}` :
         empty("Send a production sheet from Projects to this workbench.") + kotControls(current));
 
-    return heading("01 / Assembly floor & POS", "Production floor", "Open an assigned production sheet at its workbench, issue the job card, build, then dispatch.", canWrite ? btn("+ Workbench", "table", "", "primary") : "") +
+    return heading("01 / Assembly floor & POS", "Production floor", "Select a project to prepare production or dispatch stock. Select a workbench to run an assembly job.", canWrite ? btn("+ Add Project", "project-new", "", "primary") + btn("+ Workbench", "table") : "") +
       stats([["Active Workbenches", open], ["Available Benches", stations.length - open], ["Station Capacity", sum(stations.map(t => t.seats || 0))], ["Dispatches today", money(sum(todayDispatches.map(s => s.total))) + " (" + todayDispatches.length + ")"]]) +
-      `<div class="split"><div>${panel("01A", "Workbenches", legend + plan, "plan")}</div>
-      ${panel("01C", esc(current?.name || "Current Station Check"), check)}</div>`;
+      `<div class="split"><div>${panel("01A", "Workbenches & Projects", legend + projectPlan + plan, "plan")}</div>
+      ${panel("01C", esc(project?.name || current?.name || "Current Station Check"),
+        project ? projectOrder(project) + (current ? "<h3>Existing assembly job</h3>" + check : "") : check)}</div>` +
+      panel("01B","Select Products",staffCatalog({ordering:true,canOrder:canWrite && !!project && !current}));
   }
 
   // Storage Map
@@ -1327,7 +1334,7 @@ function mountRegister(root) {
           ? `<button type="button" class="btn primary" data-action="add" data-id="${esc(dish.id)}" ${enabled ? "" : "disabled"}>+ Add</button>`
           : btn("Edit BOM","dish",dish.id) };
     });
-    const products = [...production, ...legacyCards(production,false,ordering)]
+    const products = [...production, ...legacyCards(production,false,ordering,canOrder)]
       .filter(item => !["LED", "Driver"].includes(item.group));
     return productCards(products, {components:false});
   }
@@ -1472,20 +1479,21 @@ function mountRegister(root) {
   function sales() {
     const totalDispatched = sum(db.sales.map(s => s.total));
     const totalUnits = sum(db.sales.flatMap(s => s.lines.map(l => l.count)));
+    const invoices = new Map((db.invoices || []).map(invoice => [invoice.dispatchId,invoice]));
     const rows = db.sales.slice().reverse().map(s => {
       return `<tr><td><b>${esc(s.id)}</b><small>${esc(s.date)}</small></td>
         <td><b>${esc(s.table)}</b><small>${esc(ticketType(s))} · ${esc(s.method || "Challan")}${s.ref ? " · " + esc(s.ref) : ""}</small></td>
-        <td>${s.lines.map(l => `${l.count} × ${esc(l.name)}`).join(", ")}</td>
-        <td><b>${s.jobType === "Mock-up" ? "—" : money(s.total)}</b></td>
+        <td>${s.lines.map(l => `${l.count} × ${esc(l.name)}${l.circuit ? " · Circuit " + esc(l.circuit) : ""}`).join(", ")}</td>
+        <td><b>${["Mock-up","Direct stock dispatch"].includes(s.jobType) ? "—" : money(s.total)}</b></td>
         <td>${s.kotIds?.length ? s.kotIds.map(id => {
           const t = find(db.kots, id);
           return t ? btn(t.ref, "kot-view", id, "mini") : "";
-        }).join(" ") : "—"}</td></tr>`;
+        }).join(" ") : "—"}</td><td>${s.jobType === "Direct stock dispatch" ? btn("Delivery challan","direct-challan",s.id,"mini") : invoices.has(s.id) ? btn("Draft invoice","dispatch-invoice",invoices.get(s.id).id,"mini") : "—"}</td></tr>`;
     }).join("");
 
     return heading("06 / Dispatches & Job history", "Dispatches log", "Historical log of assembled luminaires dispatched to projects, along with deducted component records.") +
       stats([["Total Dispatched", money(totalDispatched)], ["Total Orders", db.sales.length], ["Luminaire Units Built", totalUnits], ["Currency", db.currency]]) +
-      panel("06A", "Dispatches Register", rows ? grid(["Dispatch ID &amp; Date", "Station / Project", "Luminaires Assembled", "Total Value", "Manufacturing KOT"], rows) : empty("No completed dispatches yet. Open a workbench, add luminaires, and click Build &amp; Dispatch."));
+      panel("06A", "Dispatches Register", rows ? grid(["Dispatch ID &amp; Date", "Station / Project", "Luminaires Assembled", "Total Value", "Manufacturing KOT","Document"], rows) : empty("No completed dispatches yet. Open a workbench, add luminaires, and click Build &amp; Dispatch."));
   }
 
   // Tab 06: Settings & Sync
@@ -1595,14 +1603,13 @@ function mountRegister(root) {
         : panel("Production", "Connect to the production register to continue.", `<p>${btn("Retry connection","reload-production")}</p>`));
       return;
     }
-    if(page === 0) screen.insertAdjacentHTML("beforeend", projectOrder());
+    if(page === 0) screen.insertAdjacentHTML("beforeend", dining());
     else if(page === 1) screen.insertAdjacentHTML("beforeend", inventory());
     else if(page === 2) screen.insertAdjacentHTML("beforeend", recipes());
     else if(page === 3) screen.insertAdjacentHTML("beforeend", catalogue());
     else if(page === 4) screen.insertAdjacentHTML("beforeend", nomenclature());
     else if(page === 5) screen.insertAdjacentHTML("beforeend", sales());
     else if(page === 6) screen.insertAdjacentHTML("beforeend", settings());
-    else if(page === 7) screen.insertAdjacentHTML("beforeend", dining());
     else if(page === 8) screen.insertAdjacentHTML("beforeend", estimatesPage());
   }
 
@@ -1782,35 +1789,55 @@ function mountRegister(root) {
     return project;
   }
 
-  function projectOrder() {
-    const projects = db.tables.filter(isProject);
-    const project = find(projects, selected);
-    const sheets = (db.productionSheets || []).filter(sheet => sheet.projectId === project?.id);
-    const list = projects.map(entry => btn(entry.name, "select", entry.id, entry.id === selected ? "primary" : "")).join(" ");
-    const lines = project?.lines.map(line => `<div class="row between line">
+  function projectOrder(project) {
+    const sheets = (db.productionSheets || []).filter(sheet => sheet.projectId === project.id);
+    const lines = project.lines.map(line => `<div class="row between line">
       <span>${esc(line.count)} × ${esc(line.name)}</span>
-      ${canWrite ? btn("−", "minus", line.id, "mini") + btn("+", "plus", line.id, "mini") : ""}
+      ${canWrite && !project.checkId && !project.kotSent && !project.builtAt ?
+        btn("−", "minus", line.id, "mini") + btn("+", "plus", line.id, "mini") : ""}
     </div>`).join("");
     const sheetList = sheets.map(sheet => `<div class="row between line">
       <span>${esc(sheet.ref)} · ${esc(sheet.status)}${sheet.bench ? " · " + esc(sheet.bench) : ""}</span>
       ${btn("Open sheet", "production-sheet", sheet.id)}</div>`).join("");
-    return heading("","Projects","Add configured products or open a production sheet from a paid Sales estimate.",
-      canWrite ? btn("+ Add Project","project-new","","primary") : "") +
-      panel("","Project register",list || empty("No projects yet.")) +
-      (project ? panel("",esc(project.name), (lines || empty("No products staged for a new sheet.")) +
-      (canWrite && lines ? btn("Create Production Sheet","production-sheet-create",project.id,"primary") : "") +
-      "<h3>Production sheets</h3>" + (sheetList || empty("No production sheets yet."))) +
-      panel("","Select Products",staffCatalog({ordering:true,canOrder:canWrite && !project.checkId && !project.builtAt})) : "");
+    const stockLines = project.directLines || [];
+    const recentDispatches = db.sales.filter(dispatch => dispatch.projectId === project.id && dispatch.jobType === "Direct stock dispatch").slice(-5).reverse();
+    return "<h3>Direct stock dispatch</h3>" + (stockLines.length ? grid(["Item","Circuit","Quantity",""],stockLines.map(line =>
+      `<tr><td>${esc(line.name)}<small>${esc(line.code)}</small></td><td>${esc(line.circuit)}</td><td>${esc(line.count)}</td>
+      <td>${canWrite ? btn("Remove","direct-remove",line.id,"mini") : ""}</td></tr>`).join("")) : empty("Add spare parts or finished lights from stock.")) +
+      (canWrite ? btn("+ Add stock item","direct-add",project.id) +
+        (stockLines.length ? btn("Dispatch stock","direct-dispatch",project.id,"primary") : "") : "") +
+      (recentDispatches.length ? "<h3>Recent stock dispatches</h3>" + recentDispatches.map(dispatch =>
+        btn(dispatch.ref,"direct-challan",dispatch.id,"mini")).join(" ") : "") +
+      "<h3>Production sheets</h3>" + (sheetList || empty("No production sheets yet.")) +
+      (lines && !project.checkId && !project.kotSent && !project.builtAt ? "<h3>Products staged for production</h3>" + lines +
+        (canWrite ? btn("Create Production Sheet","production-sheet-create",project.id,"primary") : "") : "");
+  }
+
+  function dispatchProjectStock(data, projectId, reference) {
+    const project = find(data.tables,projectId);
+    if (!project || !isProject(project) || !project.directLines?.length) throw Error("Add stock items to a project first.");
+    const uses = allocate(data, project.directLines);
+    const id = "DISP-" + String(data.sales.length + 1).padStart(4,"0");
+    const ref = reference || id;
+    const stock = uses.map(({item,batch,used}) => {
+      batch.left -= used;
+      movement(data,batch,-used,"Direct stock dispatch · " + ref + " (" + project.name + ")");
+      return {name:item.name,sku:item.id,unit:item.unit,qty:used,location:locationOf(batch)};
+    });
+    data.sales.push({id,date:day(),currency:data.currency,method:"Delivery Challan",ref,table:project.name,
+      projectId,jobType:"Direct stock dispatch",total:0,lines:project.directLines,stock});
+    project.directLines = [];
+    return id;
   }
 
   function estimatesPage() {
     const estimates = db.estimates || [];
     const list = estimates.map(estimate => `<div class="row between line">
       <span><strong>${esc(estimate.ref)}</strong> · ${esc(estimate.name)} · ${money(estimate.items.reduce((sum,item) => sum + item.cents * item.count,0) / 100)}
-      · ${estimate.payment ? "Paid · production sheet created" : "Awaiting payment"}</span>
+      · ${estimate.payment ? "Advance received · released to production" : estimate.versions?.length ? "Issued · awaiting advance" : "Draft"}</span>
       ${btn("View Estimate","estimate-view",estimate.id)}</div>`).join("");
-    return heading("","Estimates","Record payment to create a project and draft production sheet.",
-      btn("+ Add Estimate","estimate-new","","primary")) + panel("","Sales estimates",list || empty("No estimates yet."));
+    return heading("","Estimates","Import the Product Technical Table, issue an estimate revision, then record the advance to release production.",
+      btn("+ Add Estimate","estimate-new") + btn("Import Enlighten output","estimate-import","","primary")) + panel("","Sales estimates",list || empty("No estimates yet."));
   }
 
   async function saveEstimate(action, estimate) {
@@ -1818,8 +1845,78 @@ function mountRegister(root) {
     await loadProduction();
   }
 
+  const estimateVersion = version => "Version " + version.version + " · Revision " + version.revision;
+  const sourceLocation = item => [item.floor,item.zone,item.circuit].filter(Boolean).map(esc).join(" · ");
+  const cutLength = item => item.lengthMm ? esc(item.lengthMm) + " mm" : "—";
+  const estimateTotal = items => items.reduce((sum,item) => sum + item.cents * item.count,0);
+
+  function estimateLines(items) {
+    return grid(["SKU","Location / circuit","Cut length","Qty","Unit price"],items.map(item =>
+      `<tr><td>${esc(item.sku)}</td><td>${sourceLocation(item)}</td><td>${cutLength(item)}</td><td>${item.count}</td><td>${money(item.cents / 100)}</td></tr>`).join(""));
+  }
+
+  function reviseEstimate(estimate, output) {
+    const revision = estimate?.versions?.length || 0;
+    const source = output || estimate?.source;
+    const items = output ? output.items.map(item => ({...item,sourceArticle:item.sku})) : estimate.items;
+    modal("Issue estimate · Version " + (revision + 1) + " / Revision " + revision,
+      input("name","Project name",output?.projectName || estimate?.name,"text","required maxlength='120'") +
+      grid(["Source article / circuit","Cut length","Ordering SKU","Qty","Unit price"],items.map((item,index) =>
+        `<tr><td>${esc(item.sourceArticle || item.sku)}<br>${sourceLocation(item)}</td><td>${cutLength(item)}</td>
+        <td>${input("sku"+index,"SKU",item.sku,"text","required maxlength='100'")}</td>
+        <td>${input("count"+index,"Units",item.count,"number","required min='1' max='1000000' step='1'")}</td>
+        <td>${input("price"+index,"Price / unit",item.cents ? item.cents / 100 : "","number","required min='0.01' step='0.01'")}</td></tr>`).join("")),
+      form => saveEstimate("estimateIssue",{id:estimate?.id || crypto.randomUUID(),revision,source,name:required(form,"name"),
+        items:items.map((item,index) => ({...item,sku:required(form,"sku"+index),count:number(read(form,"count"+index),1),
+          cents:number(read(form,"price"+index),100)}))}),"Issue estimate");
+  }
+
   // Actions Dispatcher
   const actions = {
+    "direct-add": id => {
+      const stock = new Map();
+      for (const batch of db.batches) stock.set(batch.ingredient,(stock.get(batch.ingredient) || 0) + batch.left);
+      const choices = db.ingredients.filter(item => stock.get(item.id) > 0).map(item =>
+        [item.id,`${item.id} · ${item.name} (${stock.get(item.id)} ${item.unit} available)`]);
+      if (!choices.length) return modal("Add stock item",empty("Receive the driver or finished light into the stockroom first."));
+      modal("Add stock item",options("sku","Stockroom item",choices,choices[0][0]) +
+        amount("count","Quantity",1) + input("circuit","Circuit number"),form => update(data => {
+          const project = find(data.tables,id);
+          const item = find(data.ingredients,required(form,"sku"));
+          if (!project || !isProject(project) || !item) throw Error("Select a project and stockroom item.");
+          const count = number(read(form,"count"),1);
+          if (!Number.isSafeInteger(count) || count > 1000000) throw Error("Enter a whole quantity up to 1,000,000.");
+          const line = {id:uid(),name:item.name,code:item.id,count,unit:item.unit,price:0,
+            circuit:required(form,"circuit"),recipe:{[item.id]:1}};
+          const lines = [...(project.directLines || []),line];
+          allocate(data,lines);
+          project.directLines = lines;
+        }),"Add to project");
+    },
+    "direct-remove": id => update(data => {
+      const project = find(data.tables,selected);
+      if (!project || !isProject(project)) throw Error("Select a project first.");
+      project.directLines = (project.directLines || []).filter(line => line.id !== id);
+    }),
+    "direct-dispatch": id => {
+      const project = find(db.tables,id);
+      if (!project?.directLines?.length) return;
+      let dispatchId;
+      modal("Dispatch stock · " + project.name,
+        `<ul>${project.directLines.map(line => `<li>${line.count} × ${esc(line.name)} · Circuit ${esc(line.circuit)}</li>`).join("")}</ul>` +
+        input("reference","Dispatch reference","","text","maxlength='120'"),async form => {
+          await update(data => { dispatchId = dispatchProjectStock(data,id,read(form,"reference")); });
+          return () => actions["direct-challan"](dispatchId);
+        },"Confirm stock dispatch");
+    },
+    "direct-challan": id => {
+      const dispatch = find(db.sales,id);
+      if (dispatch?.jobType !== "Direct stock dispatch") return;
+      modal("Delivery challan · " + dispatch.ref,`<p>${esc(dispatch.table)} · ${esc(dispatch.date)}</p>` +
+        grid(["SKU","Item","Circuit","Quantity"],dispatch.lines.map(line =>
+          `<tr><td>${esc(line.code)}</td><td>${esc(line.name)}</td><td>${esc(line.circuit)}</td><td>${esc(line.count)} ${esc(line.unit)}</td></tr>`).join("")) +
+        btn("Print delivery challan","print-document"));
+    },
     "project-new": () => modal("Add Project", input("name","Project name") +
       options("kind","Project type",values(projectKinds),projectKinds[0]), form => update(data => {
       const project = {id:uid(),name:required(form,"name"),kind:required(form,"kind"),recordType:"project",lines:[]};
@@ -1848,15 +1945,15 @@ function mountRegister(root) {
           requiredParts.set(sku,(requiredParts.get(sku) || 0) + quantity * line.count);
         }
       }
-      const rows = sheet.lines.map(line => `<tr><td>${esc(line.code || line.name)}</td><td>${esc(line.count)}</td><td>${esc(line.bomRevision || "—")}</td>
+      const rows = sheet.lines.map(line => `<tr><td>${esc(line.code || line.name)}<br>${sourceLocation(line)}</td><td>${cutLength(line)}</td><td>${esc(line.count)}</td><td>${esc(line.bomRevision || "—")}</td>
         <td>${Object.entries(line.recipe || {}).map(([sku,qty]) => `${esc(sku)} × ${esc(qty * line.count)}`).join("<br>")}</td></tr>`).join("");
       modal(sheet.ref + " · " + sheet.name, `<p>${esc(sheet.status)}${sheet.bench ? " · " + esc(sheet.bench) : ""}</p>` +
-        grid(["Product","Quantity","BOM revision","Parts required"],rows) +
+        grid(["Product / circuit","Cut length","Quantity","BOM revision","Parts required"],rows) +
         (requiredParts.size ? "<h3>Total parts required</h3>" +
           grid(["Stockroom SKU","Quantity","Unit"],[...requiredParts].map(([sku,qty]) =>
             `<tr><th scope="row">${esc(sku)}</th><td>${esc(qty)}</td><td>${esc(find(db.ingredients,sku)?.unit || "—")}</td></tr>`).join("")) : "") +
         (pending.length ? "<h3>SKUs awaiting a unique product with an approved BOM</h3><ul>" +
-          pending.map(item => `<li>${esc(item.sku)} × ${esc(item.count)}</li>`).join("") + "</ul>" +
+          pending.map(item => `<li>${esc(item.sku)} × ${esc(item.count)} · ${cutLength(item)} · ${sourceLocation(item)}</li>`).join("") + "</ul>" +
           (canWrite ? btn("Match products again","production-sheet-match",id) : "") : "") +
         (sheet.status === "Draft" && !pending.length ?
           benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id,bench.name]),benches[0].id)
@@ -1879,11 +1976,13 @@ function mountRegister(root) {
         const sheet = find(data.productionSheets || [],id);
         if (!sheet || sheet.status !== "Draft") throw Error("Open a draft production sheet first.");
         sheet.pending = sheet.pending.filter(item => {
-          const matches = data.menu.filter(product => String(product.code || "").trim().toUpperCase() === item.sku && Object.keys(product.recipe || {}).length);
+          const matches = data.menu.filter(product => String(product.code || "").trim().toUpperCase() === item.sku && Object.keys(product.recipe || {}).length &&
+            (!item.lengthMm || product.linearLengthMm === item.lengthMm));
           if (matches.length !== 1) return true;
           const product = matches[0];
           sheet.lines.push({id:uid(),dish:product.id,name:product.name,code:item.sku,group:product.group,count:item.count,
-            price:item.cents / 100,recipe:structuredClone(product.recipe),configuration:product.configuration,bomRevision:product.bomRevision});
+            price:item.cents / 100,recipe:structuredClone(product.recipe),configuration:product.configuration,bomRevision:product.bomRevision,
+            lengthMm:item.lengthMm,circuit:item.circuit,floor:item.floor,zone:item.zone});
           return false;
         });
       });
@@ -1903,20 +2002,83 @@ function mountRegister(root) {
           return saveEstimate("estimateSave",{id,name:required(form,"name"),items});
         });
     },
+    "estimate-import": id => modal("Import Enlighten output",
+      '<label>Product Technical Table export<input name="transfer" type="file" accept=".json,application/json" required></label>',
+      async form => {
+        const file = form.get("transfer");
+        if (!file?.size || file.size > 1000000) throw Error("Select a Retina export under 1 MB.");
+        let output;
+        try { output = JSON.parse(await file.text()); }
+        catch { throw Error("This file is not a valid Retina JSON export."); }
+        if (output?.schema !== "enlighten-retina-v1" || typeof output.projectId !== "string" || !output.projectId.trim() ||
+            typeof output.projectName !== "string" || !Array.isArray(output.items) || !output.items.length ||
+            output.items.length > 300 || output.items.some(item => !item || typeof item.sku !== "string" || !item.sku.trim() ||
+              !Number.isSafeInteger(item.count) || item.count < 1 || !["Basic","Linear"].includes(item.kind) ||
+              (item.kind === "Linear" && (!Number.isSafeInteger(item.lengthMm) || item.lengthMm < 1)))) {
+          throw Error("Export a completed Product Technical Table with 1–300 lines from Enlighten.");
+        }
+        const estimate = find(db.estimates || [],id);
+        if (estimate?.source?.projectId && estimate.source.projectId !== output.projectId) throw Error("Select an export for the same project.");
+        return () => reviseEstimate(estimate, output);
+      },"Review estimate"),
+    "estimate-issue": id => {
+      const estimate = find(db.estimates || [],id);
+      if (!estimate || estimate.payment) return;
+      $("dialog").close();
+      reviseEstimate(estimate);
+    },
+    "estimate-import-revision": id => {
+      $("dialog").close();
+      actions["estimate-import"](id);
+    },
+    "estimate-history": key => {
+      const [id,revision] = key.split(":");
+      const estimate = find(db.estimates || [],id);
+      const issued = estimate?.versions?.[Number(revision)];
+      if (!issued) return;
+      $("dialog").close();
+      modal(estimate.ref + " · " + estimateVersion(issued),`<p>${esc(issued.name)} · ${esc(issued.issuedAt)}</p>` +
+        estimateLines(issued.items) + `<p>Total · ${money(estimateTotal(issued.items) / 100)}</p>` + btn("Print estimate","print-document"));
+    },
     "estimate-view": id => {
       const estimate = find(db.estimates || [],id);
       if (!estimate) return;
-      const amount = estimate.items.reduce((sum,item) => sum + item.cents * item.count,0);
+      const issued = estimate.versions?.at(-1);
       modal(estimate.ref + " · " + estimate.name,
-        grid(["SKU","Quantity","Unit price"],estimate.items.map(item => `<tr><td>${esc(item.sku)}</td><td>${esc(item.count)}</td><td>${money(item.cents / 100)}</td></tr>`).join("")) +
-        `<p>Total · ${money(amount / 100)}</p>` +
-        (estimate.payment ? `<p>Paid · ${esc(estimate.payment.reference)}</p>` :
-          input("reference","Payment reference","","text","required maxlength='100'") +
-          input("paid","Amount received","","number","required min='0.01' step='0.01'")),
-        estimate.payment ? undefined : form => saveEstimate("estimatePayment",{id,reference:required(form,"reference"),cents:number(read(form,"paid"),100)}),
-        "Record payment & create sheet");
+        estimateLines(estimate.items) + `<p>Total · ${money(estimateTotal(estimate.items) / 100)}</p>` +
+        (estimate.versions?.length ? "<h3>Issued versions</h3>" + estimate.versions.map(version =>
+          btn(estimateVersion(version),"estimate-history",id + ":" + version.revision)).join(" ") : "") +
+        (!estimate.payment ? '<div class="row">' + btn(issued ? "Issue next revision" : "Issue version 1","estimate-issue",id) +
+          btn("Import updated technical output","estimate-import-revision",id) + "</div>" : "") +
+        (estimate.payment ? `<p>Advance received · ${money(estimate.payment.cents / 100)} · ${esc(estimate.payment.reference)}</p>` : issued ?
+          input("reference","Advance reference","","text","required maxlength='100'") +
+          input("paid","Advance received","","number","required min='0.01' step='0.01'") : ""),
+        !estimate.payment && issued ? form => saveEstimate("estimatePayment",{id,revision:issued.revision,
+          reference:required(form,"reference"),cents:number(read(form,"paid"),100)}) : undefined,
+        "Record advance & release production");
+    },
+    "dispatch-invoice": id => {
+      const invoice = find(db.invoices || [],id);
+      if (!invoice) return;
+      modal(invoice.id + " · Draft invoice",`<p>${esc(invoice.project)} · Dispatch ${esc(invoice.dispatchRef)}</p>` +
+        estimateLines(invoice.lines.map(line => ({...line,sku:line.code || line.name,cents:Math.round(line.price * 100)}))) +
+        `<p>Subtotal · ${money(invoice.subtotalCents / 100)}</p>
+        <p>Advance applied · ${money(invoice.advanceCents / 100)}</p>
+        <p>Balance before tax · ${money((invoice.subtotalCents - invoice.advanceCents) / 100)}</p>` + btn("Print draft invoice","print-document"));
     },
 
+    "print-document": () => {
+      let area = $("document-print-area");
+      if (!area) {
+        area = document.createElement("section");
+        area.id = "document-print-area";
+        root.append(area);
+      }
+      area.innerHTML = $("dialog").innerHTML;
+      area.querySelectorAll("button, .form-actions, .error").forEach(element => element.remove());
+      root.classList.add("document-print");
+      window.print();
+    },
     "department-directory": () => {
       directoryOpen = !department || !directoryOpen;
       if (directoryOpen) note("");
@@ -2176,6 +2338,17 @@ function mountRegister(root) {
 
             const sheet = find(d.productionSheets || [],t.productionSheetId);
             if (sheet) { sheet.status = "Dispatched"; sheet.dispatchRef = ref; }
+            if (t.jobType !== "Mock-up" && required(f,"method") !== "Internal Project") {
+              d.invoices ||= [];
+              const estimate = find(d.estimates || [],sheet?.estimateId);
+              const subtotalCents = t.lines.reduce((amount,line) => amount + Math.round(line.price * 100) * line.count,0);
+              const applied = estimate ? d.invoices.filter(invoice => invoice.estimateId === estimate.id)
+                .reduce((amount,invoice) => amount + invoice.advanceCents,0) : 0;
+              d.invoices.push({id:"INV-" + saleId,dispatchId:saleId,dispatchRef:ref,project:sheet?.name || t.name,
+                issuedFromRevision:sheet?.estimateRevision,estimateId:estimate?.id,subtotalCents,
+                advanceCents:Math.min(subtotalCents,Math.max(0,(estimate?.payment?.cents || 0) - applied)),
+                status:"Draft",createdAt:new Date().toISOString(),lines:structuredClone(t.lines)});
+            }
             delete t.productionSheetId;
             delete t.kotSent;
             delete t.checkId;
@@ -2287,6 +2460,8 @@ function mountRegister(root) {
         ${input("fam", "Family Code (e.g. D1CR.3S)", source?.fam || item?.code || "")}
         ${input("image", "Product photo URL", source?.image || "", "text", "maxlength='2048'")}
         ${input("variant", "Variant label", m?.variant || "", "text", "maxlength='120'")}
+        ${input("orderingCode","Ordering SKU",source?.code || "","text","maxlength='100'")}
+        ${input("cutLength","Finished cut length (mm)",m?.linearLengthMm || "","number","min='1' max='1000000' step='1'")}
         ${options("group", "Catalogue Category", values(["Architectural Downlights", "Surface & Cylinder", "Spotlights & Accents", "Outdoor & Landscape", "Control Gear & Drivers", "LED Engines & Strip"]), m?.group || defaultGroup || "Architectural Downlights")}
         ${input("price", "Base Price (" + db.currency + ")", source?.price ?? "", "number", "required min='0' max='1000000' step='0.01'")}
         <div class="description-field">${input("description", "Catalogue Specification Description", m?.description || item?.spec?.slice(0,320) || "", "text", "maxlength='320'")}</div></div></fieldset>
@@ -2305,6 +2480,8 @@ function mountRegister(root) {
             fam: read(f, "fam"),
             image: read(f, "image"),
             variant: read(f, "variant"),
+            code: read(f,"orderingCode"),
+            linearLengthMm: read(f,"cutLength") ? number(read(f,"cutLength"),1) : null,
             group: required(f, "group"),
             price: number(read(f, "price"), 100, 0)/100,
             description: read(f, "description"),
@@ -2325,7 +2502,6 @@ function mountRegister(root) {
             if (setup.sourceTree?.length) lum.sourceBOM = structuredClone(setup.sourceTree);
           }
           if(!id) {
-            if (item) lum.code = item.code;
             d.menu.push(lum);
             if (setup.tableId) addOrderProduct(d, setup.tableId, lum);
           }
@@ -2462,6 +2638,8 @@ function mountRegister(root) {
   });
 
   listen(window, "afterprint", () => {
+    root.classList.remove("document-print");
+    $("document-print-area")?.replaceChildren();
     root.classList.remove("kot-print");
     $("kot-print-area")?.replaceChildren();
   });
@@ -3008,6 +3186,12 @@ const styles = `
 :where(.retina-inventory-pos) .menu-footer{ background: white; text-align: center; padding: 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--rule); }
 
 /* KOT / MOT Print Formatting */
+#document-print-area{display:none}
+@media print{
+  .retina-inventory-pos.document-print>.shell,.retina-inventory-pos.document-print>#dialog,.retina-inventory-pos.document-print .account-bar{display:none!important}
+  .retina-inventory-pos.document-print>#document-print-area{display:block;padding:16px;color:#162536;background:white}
+  .retina-inventory-pos.document-print tr{break-inside:avoid}
+}
 :where(.retina-inventory-pos) #kot-print-area{display:none}
 :where(.retina-inventory-pos) .kitchen-ticket{background:white;color:black;max-width:75mm;margin:0 auto;padding:4mm;font:13px/1.4 system-ui,sans-serif;overflow-wrap:anywhere}
 :where(.retina-inventory-pos) .kitchen-ticket h2{font:700 15px/1.3 system-ui,sans-serif;text-align:center;border:0;padding:0;margin:3px 0}

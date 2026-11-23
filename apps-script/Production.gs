@@ -8,7 +8,7 @@ function productionRegister_(input) {
   var chunkSize = 40000;
   var chunkCount = 30;
   var fieldCount = 3 + chunkCount;
-  var salesMutation = input.action === 'estimateSave' || input.action === 'estimatePayment';
+  var salesMutation = ['estimateSave','estimateIssue','estimatePayment'].indexOf(input.action) !== -1;
   var isSave = input.action === 'productionSave' || salesMutation;
   var encoded = '';
   if (isSave && !salesMutation) {
@@ -78,43 +78,75 @@ function retinaEstimateMutation_(state, input) {
   var data = input.estimate || {};
   state.estimates = state.estimates || [];
   var existing = state.estimates.find(function(row) { return row.id === data.id; });
-  if (input.action === 'estimateSave') {
-    if (existing) return existing;
+  if (input.action === 'estimateSave' || input.action === 'estimateIssue') {
+    if (existing && existing.payment) throw Error('A released estimate cannot be revised.');
+    if (existing && input.action === 'estimateSave') return existing;
+    var versions = existing ? existing.versions || [] : [];
+    if (input.action === 'estimateIssue' && data.revision !== versions.length) throw Error('Reload the current estimate before issuing a revision.');
     var name = String(data.name || '').trim();
     if (!/^[a-f0-9-]{36}$/i.test(data.id || '') || !name || name.length > 120 ||
-        !Array.isArray(data.items) || !data.items.length || data.items.length > 100) throw Error('Enter a project name and up to 100 estimate lines.');
+        !Array.isArray(data.items) || !data.items.length || data.items.length > 300) throw Error('Enter a project name and up to 300 estimate lines.');
     var items = data.items.map(function(item) {
       var sku = String(item && item.sku || '').trim().toUpperCase();
       if (!sku || sku.length > 100 || !Number.isSafeInteger(item.count) || item.count < 1 || item.count > 1000000 ||
           !Number.isSafeInteger(item.cents) || item.cents < 1 || item.cents > 100000000) throw Error('Each estimate line needs a SKU, quantity and unit price.');
-      return {sku:sku,count:item.count,cents:item.cents};
+      var kind = item.kind === 'Linear' ? 'Linear' : 'Basic';
+      if (kind === 'Linear' && (!Number.isSafeInteger(item.lengthMm) || item.lengthMm < 1 || item.lengthMm > 1000000))
+        throw Error('Every linear line needs a valid cut length in millimetres.');
+      return {sku:sku,count:item.count,cents:item.cents,kind:kind,lengthMm:kind === 'Linear' ? item.lengthMm : null,
+        sourceArticle:String(item.sourceArticle || '').slice(0,100),circuit:String(item.circuit || '').slice(0,100),
+        floor:String(item.floor || '').slice(0,100),zone:String(item.zone || '').slice(0,100)};
     });
-    var estimate = {id:data.id,ref:'EST-' + String(state.estimates.length + 1).padStart(4,'0'),name:name,items:items};
-    state.estimates.push(estimate);
+    var estimate = existing || {id:data.id,ref:'EST-' + String(state.estimates.length + 1).padStart(4,'0'),versions:[]};
+    var source = data.source || existing && existing.source || {};
+    if (existing && existing.source && existing.source.projectId && source.projectId !== existing.source.projectId)
+      throw Error('Use technical output from the same project when issuing a revision.');
+    estimate.name = name;
+    estimate.items = items;
+    estimate.source = {projectId:String(source.projectId || '').slice(0,100),projectCode:String(source.projectCode || '').slice(0,100),
+      technicalVersion:String(source.technicalVersion || '').slice(0,100)};
+    if (input.action === 'estimateIssue') {
+      estimate.versions = versions;
+      versions.push({version:versions.length+1,revision:versions.length,issuedAt:new Date().toISOString(),name:name,items:items,source:estimate.source});
+    }
+    if (!existing) state.estimates.push(estimate);
     return estimate;
   }
   if (!existing) throw Error('Estimate not found.');
   if (existing.payment) return existing;
+  var issued = (existing.versions || []).slice(-1)[0];
+  if (!issued || issued.revision !== data.revision) throw Error('Issue and select the current revision before recording the advance.');
   var reference = String(data.reference || '').trim();
-  var total = existing.items.reduce(function(sum,item) { return sum + item.count * item.cents; },0);
-  if (!reference || reference.length > 100 || data.cents !== total) throw Error('Enter a reference and the full estimate amount to release it to production.');
+  var total = issued.items.reduce(function(sum,item) { return sum + item.count * item.cents; },0);
+  if (!reference || reference.length > 100 || !Number.isSafeInteger(data.cents) || data.cents < 1 || data.cents > total)
+    throw Error('Enter a reference and an advance between zero and the issued estimate total.');
   var now = new Date().toISOString();
-  var project = {id:Utilities.getUuid(),name:existing.name,kind:'Other project',recordType:'project',lines:[],estimateRef:existing.ref};
-  var pending = [];
-  existing.items.forEach(function(item) {
-    var matches = state.menu.filter(function(product) {
-      return String(product.code || '').trim().toUpperCase() === item.sku && Object.keys(product.recipe || {}).length;
-    });
-    if (matches.length !== 1) { pending.push(item); return; }
-    var product = matches[0];
-    project.lines.push({id:Utilities.getUuid(),dish:product.id,name:product.name,group:product.group,code:item.sku,
-      price:item.cents / 100,recipe:product.recipe,count:item.count,bomRevision:product.bomRevision,configuration:product.configuration});
+  var project = issued.source.projectId && state.tables.find(function(row) {
+    return row.recordType === 'project' && row.enlightenProjectId === issued.source.projectId;
   });
-  state.tables.push(project);
+  if (!project) {
+    project = {id:Utilities.getUuid(),name:issued.name,kind:'Other project',recordType:'project',lines:[],
+      enlightenProjectId:issued.source.projectId,estimateRef:existing.ref};
+    state.tables.push(project);
+  }
   state.productionSheets = state.productionSheets || [];
-  state.productionSheets.push({id:Utilities.getUuid(),projectId:project.id,name:project.name,ref:existing.ref,
-    lines:project.lines,pending:pending,status:'Draft',createdAt:now,paymentRequired:true});
-  project.lines = [];
-  existing.payment = {reference:reference,cents:data.cents,receivedAt:now};
+  ['Basic','Linear'].forEach(function(kind) {
+    var lines = [], pending = [];
+    issued.items.filter(function(item) { return item.kind === kind; }).forEach(function(item) {
+      var matches = state.menu.filter(function(product) {
+        return String(product.code || '').trim().toUpperCase() === item.sku && Object.keys(product.recipe || {}).length &&
+          (!item.lengthMm || product.linearLengthMm === item.lengthMm);
+      });
+      if (matches.length !== 1) { pending.push(item); return; }
+      var product = matches[0];
+      lines.push({id:Utilities.getUuid(),dish:product.id,name:product.name,group:product.group,code:item.sku,
+        price:item.cents / 100,recipe:product.recipe,count:item.count,bomRevision:product.bomRevision,configuration:product.configuration,
+        lengthMm:item.lengthMm,circuit:item.circuit,floor:item.floor,zone:item.zone});
+    });
+    if (!lines.length && !pending.length) return;
+    state.productionSheets.push({id:Utilities.getUuid(),projectId:project.id,name:project.name,ref:existing.ref + '-R' + issued.revision + '-' + kind.toUpperCase(),
+      estimateId:existing.id,estimateRevision:issued.revision,kind:kind,lines:lines,pending:pending,status:'Draft',createdAt:now,paymentRequired:true});
+  });
+  existing.payment = {reference:reference,cents:data.cents,receivedAt:now,revision:issued.revision};
   return existing;
 }

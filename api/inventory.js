@@ -82,7 +82,7 @@ export default async function handler(req,res) {
     const access=accessFor(employee);
     const canSee=id=>access.departments.includes(id);
     if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile?.name||email,departments:access.departments});
-    const estimateWrite = action === 'estimateSave' || action === 'estimatePayment';
+    const estimateWrite = ['estimateSave','estimateIssue','estimatePayment'].includes(action);
     if(action==='productionLoad' || action==='productionSave' || estimateWrite) {
       const manufacturing=canSee('manufacturing');
       const purchasing=canSee('purchase');
@@ -113,7 +113,7 @@ export default async function handler(req,res) {
       if(result.state && !manufacturing) {
         const d=result.state;
         const stockView=purchasing ? {ingredients:d.ingredients,batches:d.batches,activity:d.activity} : {};
-        const salesView=sales ? {sales:d.sales,estimates:d.estimates||[]} : {};
+        const salesView=sales ? {sales:d.sales,estimates:d.estimates||[],invoices:d.invoices||[]} : {};
         result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
       }
       return res.json({...result,canWrite,canSeed:access.admin,email,

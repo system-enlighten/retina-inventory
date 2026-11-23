@@ -41,7 +41,7 @@ function doPost(e) {
     }
 
     var action = String(input.action || '').trim();
-    if (['productionLoad', 'productionSave', 'estimateSave', 'estimatePayment'].indexOf(action) !== -1) {
+    if (['productionLoad', 'productionSave', 'estimateSave', 'estimateIssue', 'estimatePayment'].indexOf(action) !== -1) {
       return reply_(productionRegister_(input));
     } else if (action === 'saveProduct') {
       return reply_(saveProduct_(input));
