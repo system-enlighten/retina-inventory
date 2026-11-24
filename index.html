@@ -759,11 +759,11 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Build Estimate"];
+  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS"];
   const departments = [
     {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
-    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[8,9,10,3,5]},
+    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[11,8,9,10,3,5]},
     {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
     {id:"accounts", name:"Accounts", scope:"Ledger, payments and reporting", pages:[]},
     {id:"legal", name:"Patent & Legal Team", scope:"Patents, IP and contracts", pages:[]},
@@ -1878,7 +1878,7 @@ function mountRegister(root) {
       <td>${item.count}</td><td>${money(item.cents / 100)}</td><td>${btn("Remove","quote-remove",String(index),"mini")}</td></tr>`).join("");
     const cards = legacyProducts.filter(item => item.group === "Housing").map(item => ({...item,
       action:project ? btn(housingRecord(item) ? "Configure" : "Add product","quote-product",item.id,"primary") : ""}));
-    return heading("","New Estimate","Select a project, then configure and price the products.",btn("Back to estimates","page","8") + btn("Enter items manually","estimate-new")) +
+    return heading("","Sales POS","Select a project, then configure and price the products.",btn("Back to estimates","page","8") + btn("Enter items manually","estimate-new")) +
       `<label>Project<select name="quote-project"><option value="">Select a project</option>${quoteProjects().map(row =>
         `<option value="${esc(row.id)}" ${row.id === quoteProject ? "selected" : ""}>${esc(row.name)}</option>`).join("")}</select></label>` +
       panel("","Estimate items",(lines ? grid(["Product","Quantity","Unit price",""],lines) : empty("No products added.")) +
@@ -1983,7 +1983,12 @@ function mountRegister(root) {
       </style><script>
       const sheet = document.querySelector("table");
       const sheetWidth = parseFloat(sheet.style.width);
-      const fit = () => { if (sheetWidth > 0) sheet.style.setProperty("--preview-scale", Math.min(1, document.documentElement.clientWidth / sheetWidth)); };
+      const viewport = sheet.parentElement;
+      const fit = () => {
+        const padding = getComputedStyle(viewport);
+        const available = viewport.clientWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight);
+        if (sheetWidth > 0 && available > 0) sheet.style.setProperty("--preview-scale", Math.min(1, available / sheetWidth));
+      };
       window.addEventListener("resize",fit);
       fit();
       <\/script></html>`);
@@ -2006,7 +2011,7 @@ function mountRegister(root) {
     const history = doc?.estimate?.versions?.length > 1 ? doc.estimate.versions.map(version => btn(estimateVersion(version),"billing-select",doc.id + ":" + version.revision,doc.issued === version ? "primary" : "")).join("") : "";
     const status = doc?.estimate?.payment ? "Advance recorded" : doc?.invoice ? doc.invoice.status || "Draft" : latest ? "Issued" : "Draft";
     return `<div class="billing-heading">` + heading("",invoices ? "Invoices" : "Estimates","",invoices ? "" :
-      btn("+ Add New Estimate","quote-open") + btn("Import Enlighten output","estimate-import","","primary")) + "</div>" +
+      btn("Import Enlighten output","estimate-import","","primary")) + "</div>" +
       `<section class="billing-workspace"><div class="billing-detail">${doc ? `<header><strong>${esc(doc.title)}</strong><small>${esc(doc.invoice?.id || doc.estimate.ref)} · ${status}</small></header>
       <nav class="row billing-toolbar" aria-label="${label} actions">${actions}</nav>
       <div class="billing-paper"><iframe id="billing-preview" title="${label} document" srcdoc="${esc(documentHTML(doc))}"></iframe></div>` : empty("No " + label.toLowerCase() + "s yet.")}</div>
@@ -2216,7 +2221,6 @@ function mountRegister(root) {
       $("dialog").close();
       actions["production-sheet"](id);
     },
-    "quote-open": () => { quoteId ||= crypto.randomUUID(); page = 11; render(); },
     "quote-remove": index => { quoteLines.splice(Number(index),1); render(); },
     "quote-product": id => {
       if (!find(quoteProjects(),quoteProject)) throw Error("Select a project first.");
@@ -2231,6 +2235,7 @@ function mountRegister(root) {
       if (savingQuote) return;
       savingQuote = true;
       try {
+        quoteId ||= crypto.randomUUID();
         await saveEstimate("estimateSave",{id:quoteId,name:project.name,source:{localProjectId:project.id},items:quoteLines});
         quoteLines = []; quoteId = "";
         page = 8;
