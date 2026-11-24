@@ -1701,20 +1701,20 @@ function mountRegister(root) {
     });
     const sourceWidths = [56,120,108,85,177,112,145,68,142,100,58,58,156,88,85,125,155,95,128,60,87,72,115];
     const visibleColumns = headers.map((_,index) => index).filter(index =>
-      ![2,16,17,22].includes(index) && (bomView === "linear" || ![19,20,21].includes(index)));
+      ![2,16,17,22].includes(index) &&
+      !(bomView === "linear" ? [13,14,15] : [19,20,21]).includes(index));
     const widths = visibleColumns.map(index => sourceWidths[index]);
     const columns = widths.map(width => `<col style="width:${width}px">`).join("");
     const header = visibleColumns.map(index => `<th scope="col">${esc(headers[index])}</th>`).join("") + '<th scope="col">Actions</th>';
-    const body = shown.map(row => `<tr>${visibleColumns.map(column => {
+    const body = shown.map(row => `<tr data-housing-row="${esc(row[0])}">${visibleColumns.map(column => {
       const tag = column === 0 ? "th" : "td";
       const thumbnail = column === 1 && localThumbnails["Housing-" + row[0]];
       const style = [5,6,7,14,19,20,21].includes(column) ? ' class="housing-spec-emphasis"' : "";
       return `<${tag}${column === 0 ? ' scope="row"' : ''}${style}>${thumbnail
         ? `<img loading="lazy" decoding="async" src="${esc(thumbnail)}" alt="${esc(row[4] || "Housing " + row[0])}">`
-        : esc(row[column])}</${tag}>`;
-    }).join("")}<td class="housing-row-actions">${btn("Configure","housing-configure",row[0],"mini")}
-        ${btn("Single-level BOM","housing-bom-single",row[0],"mini")}
-        ${btn("Multi-level BOM","housing-bom-multi",row[0],"mini")}</td></tr>`).join("");
+        : column === 0 ? `<button type="button" class="housing-row-link" data-action="housing-bom" data-id="${esc(row[0])}"
+            aria-label="Open BOM for housing ${esc(row[0])}">${esc(row[0])}</button>` : esc(row[column])}</${tag}>`;
+    }).join("")}<td class="housing-row-actions">${btn("Configure","housing-configure",row[0],"mini")}</td></tr>`).join("");
     const title = bomView === "linear" ? "Linear Database" : bomView === "other" ? "Other Housings" : "Housing Database";
     return `<div class="housing-database-scroll" tabindex="0" role="region" aria-label="${title}">
       <table class="housing-database-grid" style="width:${sum(widths)+150}px">
@@ -1747,17 +1747,18 @@ function mountRegister(root) {
         `<tr><th scope="row">${esc(row[0])}</th>${row.slice(1).map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join(""));
   }
 
-  function showHousingBom(serial, multiLevel) {
+  function showHousingBom(serial) {
     const housing = housingData?.housings[serial];
     const sections = housingBomMaster[serial] || {};
     const single = Object.entries(sections).map(([name, rows]) => `<h3>${esc(name)}</h3>` +
       grid(["S#","Dimension","Description","SKU","Quantity","Unit","#Tag"],rows.map(row =>
         `<tr>${row.map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join(""))).join("");
-    const content = multiLevel ?
-      (housing?.tree.length ? bomTree(housing.tree) : empty("No multi-level assembly is recorded for this housing.")) :
-      (single || empty("No single-level BOM is recorded for this housing."));
-    modal((multiLevel ? "Multi-level BOM" : "Single-level BOM") + " · D." + serial,
-      `<p>${esc(housing?.name || "")}</p>` + content);
+    modal("Bill of Materials · D." + serial,
+      `<p>${esc(housing?.name || "")}</p>
+      <details open><summary>Single-level BOM</summary>
+        ${single || empty("No single-level BOM is recorded for this housing.")}</details>
+      <details ${single ? "" : "open"}><summary>Multi-level BOM</summary>
+        ${housing?.tree.length ? bomTree(housing.tree) : empty("No multi-level assembly is recorded for this housing.")}</details>`);
     $("dialog").classList.add("housing-config-dialog");
   }
 
@@ -2118,17 +2119,15 @@ function mountRegister(root) {
     ) : "";
     const fallback = housing.parts.map(part => [...part, []]);
     const sourceTree = housing.tree.length ? housing.tree : fallback;
+    const masterAccessories = housingBomMaster[item.id.slice(8)]?.Accessories || [];
+    const accessories = masterAccessories.length
+      ? masterAccessories.map(row => [row[3], row[2]]) : (housing.accessories || []).map(([sku,name]) => [sku,name]);
     modal("Configure " + item.name, `
       <p><b>${esc(item.code)}</b> · ${esc(housing.spec.join(" · ") || item.spec)}</p>
       ${variantTable}<div id="housing-led"></div><div id="housing-driver"></div>
       <div id="housing-selection" aria-live="polite"></div>
       ${inventoryView && canWrite && !db.ingredients.some(row => item.aliases.includes(String(row.id).trim().toUpperCase()))
         ? btn("Add housing to stockroom","inventory-register",item.id) : ""}
-      <details open><summary><strong>Housing BOM · source reference</strong></summary>
-      ${sourceTree.length ? bomTree(sourceTree) : empty("No assembly BOM was found in the sheet for this housing.")}
-      ${housing.tree.length ? empty("Assembly relationships follow the sheet’s stages. Verify inconsistent SKUs and quantities before approval.") : ""}
-      </details>
-      ${housing.accessories?.length ? `<details><summary>Variant parts and accessories</summary>${bomTree(housing.accessories)}</details>` : ""}
     `);
     const dialog = $("dialog");
     dialog.classList.add("housing-config-dialog");
@@ -2171,6 +2170,9 @@ function mountRegister(root) {
         <p>${registered ? "Approved parts per finished unit" : finished ? "Purchased finished unit. Review its stock SKU and any separately stocked accessories." : "Imported combinations are candidates. Confirm fit, electrical ratings, dimming and load before approving the stock parts."}</p>
         ${registeredParts.length ? `<ul>${registeredParts.map(([sku,qty]) => `<li>${esc(sku)} · ${esc(qty)} ${esc(find(db.ingredients,sku)?.unit)}</li>`).join("")}</ul>` : ""}
         ${unresolved ? empty("Resolve missing or ambiguous article references in the source sheet before approving this configuration.") : ""}
+        <h3>Accessories</h3>
+        ${accessories.length ? grid(["SKU","Description"], accessories.map(([sku,name]) =>
+          `<tr><th scope="row">${esc(sku)}</th><td>${esc(name)}</td></tr>`).join("")) : empty("No accessories are recorded for this housing.")}
         <div class="row" id="housing-config-action"></div>`;
       const action = $("housing-config-action");
       if (onQuote) {
@@ -2570,8 +2572,7 @@ function mountRegister(root) {
       if (!housingRecord(item)) throw Error("No configuration is recorded for housing D." + serial + ".");
       configureHousing(item);
     },
-    "housing-bom-single": serial => showHousingBom(serial,false),
-    "housing-bom-multi": serial => showHousingBom(serial,true),
+    "housing-bom": serial => showHousingBom(serial),
     "bom-view": id => {
       bomView = id;
       render();
@@ -3540,7 +3541,11 @@ function mountRegister(root) {
 
   listen(root, "click", async event => {
     const button = event.target.closest("[data-action]");
-    if(!button) return;
+    if (!button) {
+      const row = event.target.closest("[data-housing-row]");
+      if (row && !event.target.closest("button, a, input, select")) actions["housing-bom"](row.dataset.housingRow);
+      return;
+    }
     try { await actions[button.dataset.action](button.dataset.id, button); }
     catch(error) { note(error.message); }
   });
@@ -4281,6 +4286,9 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
 .housing-database-grid img{display:block;max-width:100%;height:68px;object-fit:contain;margin:auto}
 
 .housing-row-actions .btn{display:block;width:100%;margin:3px 0}
+.housing-database-grid tr[data-housing-row]{cursor:pointer}
+.retina-inventory-pos .housing-database-grid tr[data-housing-row]:hover > :is(th,td){background:var(--blue)}
+.housing-row-link{color:inherit;background:none;border:0;text-decoration:underline;text-underline-offset:2px}
 
 `;
 document.getElementById('app-styles').textContent = styles;
