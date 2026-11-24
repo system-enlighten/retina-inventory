@@ -27,6 +27,12 @@ function verifySession(req) {
 function setCookie(res,value,maxAge) {
   res.setHeader('Set-Cookie',`${cookieName}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`);
 }
+const housingPurchaseFields = new Map(housingDatabase.rows.map(row => [row[0], [row[16], row[22]]]));
+const purchaseHousingAliases = {
+  headers: [housingDatabase.headers[16], housingDatabase.headers[22], ...housingSupplierAliases.headers],
+  rows: housingSupplierAliases.rows.map(([serial,...aliases]) =>
+    [serial, ...(housingPurchaseFields.get(serial) || ["",""]), ...aliases])
+};
 const CATALOG_TABS = ['Housing','LED','Driver'];
 const DEPARTMENT_NAMES = {
   manufacturing: 'Manufacturing Operations',
@@ -139,7 +145,7 @@ export default async function handler(req,res) {
       return res.json({...result,canWrite,canSeed:access.admin,email,
         ...(action === "productionLoad" && (manufacturing || sales) ? {housingData,housingBomMaster} : {}),
         ...(action === "productionLoad" && manufacturing ? {housingDatabase} : {}),
-        ...(action === "productionLoad" && purchasing ? {housingSupplierAliases} : {})});
+        ...(action === "productionLoad" && purchasing ? {housingSupplierAliases:purchaseHousingAliases} : {})});
     }
     if(action==='catalog') {
       const canReadStock=canSee('manufacturing') || canSee('purchase');

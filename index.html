@@ -1699,10 +1699,13 @@ function mountRegister(root) {
       const linear = Number(row[0]) >= 200 && Number(row[0]) <= 400;
       return bomView === "all" || (bomView === "linear" ? linear : !linear);
     });
-    const widths = [56,120,108,85,177,112,145,68,142,100,58,58,156,88,85,125,155,95,128,60,87,72,115];
+    const sourceWidths = [56,120,108,85,177,112,145,68,142,100,58,58,156,88,85,125,155,95,128,60,87,72,115];
+    const visibleColumns = headers.map((_,index) => index).filter(index =>
+      ![2,16,17,22].includes(index) && (bomView === "linear" || ![19,20,21].includes(index)));
+    const widths = visibleColumns.map(index => sourceWidths[index]);
     const columns = widths.map(width => `<col style="width:${width}px">`).join("");
-    const header = headers.map(label => `<th scope="col">${esc(label)}</th>`).join("") + '<th scope="col">Actions</th>';
-    const body = shown.map(row => `<tr>${headers.map((_,column) => {
+    const header = visibleColumns.map(index => `<th scope="col">${esc(headers[index])}</th>`).join("") + '<th scope="col">Actions</th>';
+    const body = shown.map(row => `<tr>${visibleColumns.map(column => {
       const tag = column === 0 ? "th" : "td";
       const thumbnail = column === 1 && localThumbnails["Housing-" + row[0]];
       const style = [5,6,7,14,19,20,21].includes(column) ? ' class="housing-spec-emphasis"' : "";
@@ -1715,7 +1718,6 @@ function mountRegister(root) {
     const title = bomView === "linear" ? "Linear Database" : bomView === "other" ? "Other Housings" : "Housing Database";
     return `<div class="housing-database-scroll" tabindex="0" role="region" aria-label="${title}">
       <table class="housing-database-grid" style="width:${sum(widths)+150}px">
-        <caption class="housing-database-caption">${title} · ${shown.length} entries</caption>
         <colgroup>${columns}<col style="width:150px"></colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody>
       </table></div>`;
   }
@@ -4269,13 +4271,12 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
 .housing-database-scroll{max-height:72vh;overflow:auto;border:1px solid #ccc;background:white}
 .housing-database-scroll:focus-visible{outline:2px solid var(--rust);outline-offset:2px}
 :where(.retina-inventory-pos) .housing-database-grid{table-layout:fixed;border-collapse:separate;border-spacing:0;background:white;color:#222}
-.housing-database-caption{text-align:left;padding:8px;font:10pt "Fira Code",Consolas,monospace}
 .retina-inventory-pos .housing-database-grid :is(th,td){
   border:0;border-right:1px solid #d0d0d0;border-bottom:1px solid #d0d0d0;
   padding:7px 5px;text-align:center;vertical-align:middle;white-space:pre-wrap;overflow-wrap:anywhere;
   text-transform:none;letter-spacing:normal;color:#222;background:#fff;font:10pt/1.4 "Fira Code",Consolas,monospace
 }
-.retina-inventory-pos .housing-database-grid thead th{position:sticky;top:0;z-index:1;font-size:11pt;font-weight:700}
+.retina-inventory-pos .housing-database-grid thead th{position:sticky;top:0;z-index:1;font-size:11pt;font-weight:700;background:var(--blue);color:var(--ink);border-bottom-color:var(--rule)}
 .retina-inventory-pos .housing-database-grid .housing-spec-emphasis{font-family:"Helvetica Neue",Arial,sans-serif;font-weight:700}
 .housing-database-grid img{display:block;max-width:100%;height:68px;object-fit:contain;margin:auto}
 
