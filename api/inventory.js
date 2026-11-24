@@ -1,3 +1,4 @@
+import ledBracketSource from "../server/led-bracket-source.js";
 import housingBomMaster from "../server/housing-bom-master.js";
 import housingSupplierAliases from "../server/housing-supplier-aliases.js";
 import housingDatabase from "../server/housing-database.js";
@@ -27,6 +28,8 @@ function verifySession(req) {
 function setCookie(res,value,maxAge) {
   res.setHeader('Set-Cookie',`${cookieName}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`);
 }
+const housingAdapterBrackets = Object.fromEntries(housingDatabase.rows.map(row => [row[0],row[18]]));
+const housingConfiguration = {...housingData,adapterBrackets:housingAdapterBrackets,ledBracketSource};
 const housingPurchaseFields = new Map(housingDatabase.rows.map(row => [row[0], [row[16], row[22]]]));
 const purchaseHousingAliases = {
   headers: [housingDatabase.headers[16], housingDatabase.headers[22], ...housingSupplierAliases.headers],
@@ -143,7 +146,7 @@ export default async function handler(req,res) {
         result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
       }
       return res.json({...result,canWrite,canSeed:access.admin,email,
-        ...(action === "productionLoad" && (manufacturing || sales) ? {housingData,housingBomMaster} : {}),
+        ...(action === "productionLoad" && (manufacturing || sales) ? {housingData:housingConfiguration,housingBomMaster} : {}),
         ...(action === "productionLoad" && manufacturing ? {housingDatabase} : {}),
         ...(action === "productionLoad" && purchasing ? {housingSupplierAliases:purchaseHousingAliases} : {})});
     }

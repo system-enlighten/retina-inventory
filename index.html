@@ -1696,8 +1696,10 @@ function mountRegister(root) {
     if (!housingDatabase) return empty("Housing Database is unavailable. Reload the production register.");
     const {headers,rows} = housingDatabase;
     const shown = rows.filter(row => {
-      const linear = Number(row[0]) >= 200 && Number(row[0]) <= 400;
-      return bomView === "all" || (bomView === "linear" ? linear : !linear);
+      const serial = Number(row[0]);
+      if (bomView === "linear") return serial >= 200 && serial <= 400;
+      if (bomView === "application") return serial > 400;
+      return true;
     });
     const sourceWidths = [56,120,108,85,177,112,145,68,142,100,58,58,156,88,85,125,155,95,128,60,87,72,115];
     const visibleColumns = headers.map((_,index) => index).filter(index =>
@@ -1715,7 +1717,7 @@ function mountRegister(root) {
         : column === 0 ? `<button type="button" class="housing-row-link" data-action="housing-bom" data-id="${esc(row[0])}"
             aria-label="Open BOM for housing ${esc(row[0])}">${esc(row[0])}</button>` : esc(row[column])}</${tag}>`;
     }).join("")}<td class="housing-row-actions">${btn("Configure","housing-configure",row[0],"mini")}</td></tr>`).join("");
-    const title = bomView === "linear" ? "Linear Database" : bomView === "other" ? "Other Housings" : "Housing Database";
+    const title = bomView === "linear" ? "Linear Database" : bomView === "application" ? "Application-Specific" : "Housing Database";
     return `<div class="housing-database-scroll" tabindex="0" role="region" aria-label="${title}">
       <table class="housing-database-grid" style="width:${sum(widths)+150}px">
         <colgroup>${columns}<col style="width:150px"></colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody>
@@ -1747,12 +1749,28 @@ function mountRegister(root) {
         `<tr><th scope="row">${esc(row[0])}</th>${row.slice(1).map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join(""));
   }
 
+  function singleLevelBomGrid(serial, sections) {
+    const widths = [76,55,104,120,280,160,78,59,72];
+    const columns = widths.map(width => `<col style="width:${width}px">`).join("");
+    const groups = Object.entries(sections).map(([name,rows]) => {
+      const description = name === "Parts" ? "Description" : name === "Accessories" ? "Additional Components/Acceseries" : name;
+      const headings = ["Housing#","S#","Thumbnail","Dimension",description,"SKU","Quantity","Unit","#Tag"];
+      return `<tbody><tr class="bom-master-head">${headings.map(label => `<th scope="col">${esc(label)}</th>`).join("")}</tr>
+        ${rows.map(([sequence,dimension,detail,sku,quantity,unit,tag]) => `<tr>
+          <td class="bom-master-serial">${esc(serial)}</td><td class="bom-master-number">${esc(sequence)}</td>
+          <td></td><td>${esc(dimension)}</td><td class="${name === "Parts" ? "bom-master-description" : ""}">${esc(detail)}</td>
+          <td class="${/^See\b/i.test(sku) ? "bom-master-reference" : "bom-master-sku"}">${esc(sku)}</td>
+          <td>${esc(quantity)}</td><td class="bom-master-number">${esc(unit)}</td><td>${esc(tag)}</td>
+        </tr>`).join("")}</tbody>`;
+    }).join("");
+    return `<div class="bom-master-scroll" role="region" aria-label="Single-level BOM for D.${esc(serial)}" tabindex="0">
+      <table class="bom-master-grid"><colgroup>${columns}</colgroup>${groups}</table></div>`;
+  }
+
   function showHousingBom(serial) {
     const housing = housingData?.housings[serial];
     const sections = housingBomMaster[serial] || {};
-    const single = Object.entries(sections).map(([name, rows]) => `<h3>${esc(name)}</h3>` +
-      grid(["S#","Dimension","Description","SKU","Quantity","Unit","#Tag"],rows.map(row =>
-        `<tr>${row.map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join(""))).join("");
+    const single = Object.keys(sections).length ? singleLevelBomGrid(serial,sections) : "";
     modal("Bill of Materials · D." + serial,
       `<p>${esc(housing?.name || "")}</p>
       <details open><summary>Single-level BOM</summary>
@@ -1764,7 +1782,7 @@ function mountRegister(root) {
 
   // Tab 03: BOM & Specifications
   function recipes() {
-    const tabs = [["all","Housing Database"],["linear","Linear Database"],["other","Other Housings"],["bom","Bill of Materials"]];
+    const tabs = [["all","Housing Database"],["linear","Linear Database"],["application","Application-Specific"],["bom","Bill of Materials"]];
     return heading("", "BOM", "", bomView === "bom" && canWrite ? btn("+ Add Luminaire","dish","","primary") : "") +
       '<nav class="row nomen-view" aria-label="BOM views">' + tabs.map(([id,label]) =>
         `<button type="button" class="btn ${bomView === id ? "primary" : ""}" data-action="bom-view" data-id="${id}"
@@ -2104,8 +2122,20 @@ function mountRegister(root) {
     });
   }
 
+  function bracketLedMatches(bracket, records) {
+    const codes = bracket.toUpperCase().split(/[\n/|;,]+/).map(value => value.trim()).filter(Boolean);
+    return records.filter(([, , spec]) => {
+      const model = spec[0].toUpperCase();
+      return codes.some(code => model === code || model.startsWith(code + " "));
+    });
+  }
+
   function configureHousing(item, tableId, onQuote, inventoryView = false) {
     const housing = housingRecord(item);
+    const serial = item.id.slice(8);
+    const basic = Number(serial) < 200 || Number(serial) > 400;
+    const bracket = housingData.adapterBrackets?.[serial] || "";
+    const bracketMatches = basic ? bracketLedMatches(bracket,housingData.ledBracketSource || []) : [];
     const finished = housing.finished && !housing.options.length;
     const candidates = finished ? [[item.code, "", "", ""]] : housing.options;
     const choices = [...new Set(candidates.map(row => row[1]))];
@@ -2124,6 +2154,7 @@ function mountRegister(root) {
       ? masterAccessories.map(row => [row[3], row[2]]) : (housing.accessories || []).map(([sku,name]) => [sku,name]);
     modal("Configure " + item.name, `
       <p><b>${esc(item.code)}</b> · ${esc(housing.spec.join(" · ") || item.spec)}</p>
+      ${basic && !finished ? `<p>Adapter bracket · ${esc(bracket || "Not specified")}</p>` : ""}
       ${variantTable}<div id="housing-led"></div><div id="housing-driver"></div>
       <div id="housing-selection" aria-live="polite"></div>
       ${inventoryView && canWrite && !db.ingredients.some(row => item.aliases.includes(String(row.id).trim().toUpperCase()))
@@ -2137,21 +2168,30 @@ function mountRegister(root) {
     function refresh(change) {
       if (variant === null) { resultSlot.textContent = "Select a housing variant to see matching LEDs."; return; }
       const byVariant = candidates.filter(row => row[1] === variant);
-      const leds = [...new Set(byVariant.map(row => row[2]))].filter(Boolean);
-      const drivers = [...new Set(byVariant.filter(row => row[2] === led).map(row => row[3]))].filter(Boolean);
+      const selectedBracketLed = basic && led ? bracketMatches.find(([row]) => "LED row " + row === led) : null;
+      const ledId = basic ? selectedBracketLed?.[1] : led;
+      const linkedArticle = !basic || Boolean(ledId && housingData.led[ledId]?.length === 1 &&
+        housingData.led[ledId][0][0].trim().toUpperCase() === selectedBracketLed[2][0].toUpperCase());
+      const ledRows = basic ? bracketMatches.map(([row,id,spec]) =>
+        ["LED row " + row,[[...spec,id || "Missing"]]]) :
+        componentRows("led",[...new Set(byVariant.map(row => row[2]))].filter(Boolean));
+      const drivers = linkedArticle && ledId ? [...new Set(byVariant.filter(row => row[2] === ledId).map(row => row[3]))].filter(Boolean) : [];
       if (!finished) {
         if (change !== "housing-led" && change !== "housing-driver" && change !== "housing-config-code")
           ledSlot.innerHTML = configurationTable("housing-led","LED",
-            ["Product code","Size (mm)","Power","Current","Voltage","CCT","CRI"],componentRows("led",leds),led);
+            ["Product code","Size (mm)","Power","Current","Voltage","CCT","CRI",...(basic ? ["LED article"] : [])],ledRows,led);
         if (change !== "housing-driver" && change !== "housing-config-code")
           driverSlot.innerHTML = led ? configurationTable("housing-driver","Driver",
             ["Product code","CV / CC","Voltage","Current","Load","Control","IP","Make"],componentRows("drivers",drivers),driver) : "";
         if (!led || !driver) {
-          resultSlot.textContent = !led ? "Select a matching LED to see drivers." : "Select a matching driver to review the configuration.";
+          resultSlot.textContent = !ledRows.length ? (basic && !bracket ? "This housing has no adapter bracket recorded." : "No matching LEDs were found.") :
+            !led ? "Select a matching LED to see drivers." : !linkedArticle ?
+              "This LED matches the adapter bracket. A valid LED article link is required before Retina can show its recorded drivers." :
+              !drivers.length ? "No driver combination is recorded for this LED and variant." : "Select a matching driver to review the configuration.";
           return;
         }
       }
-      const matches = byVariant.filter(row => row[2] === (finished ? "" : led) && row[3] === (finished ? "" : driver));
+      const matches = byVariant.filter(row => row[2] === (finished ? "" : ledId) && row[3] === (finished ? "" : driver));
       const chosen = (change === "housing-config-code"
         ? matches.find(row => row[0] === form.elements["housing-config-code"]?.value) : null) || matches[0];
       if (!chosen) {
@@ -2161,7 +2201,7 @@ function mountRegister(root) {
       const [code, v, selectedLed, selectedDriver] = chosen;
       const configuration = {housing:item.id, variant:v, led:selectedLed, driver:selectedDriver, code, finished};
       const registered = (db.billingProducts || db.menu).find(product => sameHousingConfiguration(product.configuration, configuration));
-      const unresolved = !finished && (!led || !driver || housingData.led[led]?.length !== 1 || housingData.drivers[driver]?.length !== 1
+      const unresolved = !finished && (!ledId || !driver || housingData.led[ledId]?.length !== 1 || housingData.drivers[driver]?.length !== 1
         || (v && !housing.variants[v]));
       const registeredParts = Object.entries(registered?.recipe || {});
       resultSlot.innerHTML = `
@@ -4289,6 +4329,23 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
 .housing-database-grid tr[data-housing-row]{cursor:pointer}
 .retina-inventory-pos .housing-database-grid tr[data-housing-row]:hover > :is(th,td){background:var(--blue)}
 .housing-row-link{color:inherit;background:none;border:0;text-decoration:underline;text-underline-offset:2px}
+
+.bom-master-scroll{overflow:auto;margin:12px 0 16px;background:#fff;border:1px solid #c7c7c7}
+.bom-master-scroll:focus-visible{outline:2px solid var(--rust);outline-offset:2px}
+.retina-inventory-pos .bom-master-grid{table-layout:fixed;width:100%;min-width:1004px;border-collapse:collapse;background:#fff}
+.retina-inventory-pos .bom-master-grid :is(th,td){
+  border:1px solid #d3d3d3;background:#fff;color:#111;padding:5px 6px;
+  font:10pt/1.35 "Fira Code",Consolas,monospace;letter-spacing:normal;text-transform:none;
+  text-align:center;vertical-align:middle;white-space:pre-wrap;overflow-wrap:anywhere
+}
+.retina-inventory-pos .bom-master-grid th{border-bottom-color:#111;font-weight:700}
+.retina-inventory-pos .bom-master-grid tbody + tbody th{border-top:2px solid #111}
+.retina-inventory-pos .bom-master-grid tr > :first-child{border-right:2px solid #111}
+.retina-inventory-pos .bom-master-grid .bom-master-serial{font-family:Consolas,monospace}
+.retina-inventory-pos .bom-master-grid .bom-master-number{font-family:Arial,sans-serif}
+.retina-inventory-pos .bom-master-grid .bom-master-description{text-align:left}
+.retina-inventory-pos .bom-master-grid .bom-master-sku{font-weight:700}
+.retina-inventory-pos .bom-master-grid .bom-master-reference{background:#d9d9d9}
 
 `;
 document.getElementById('app-styles').textContent = styles;
