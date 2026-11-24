@@ -82,7 +82,7 @@ export default async function handler(req,res) {
     const access=accessFor(employee);
     const canSee=id=>access.departments.includes(id);
     if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile?.name||email,departments:access.departments});
-    const estimateWrite = ['estimateSave','estimateIssue','estimatePayment','estimateEdit','invoiceEdit','invoicePayment'].includes(action);
+    const estimateWrite = ['estimateSave','estimateIssue','estimatePayment','estimateEdit','invoiceEdit','invoicePayment','salesProjectCreate'].includes(action);
     if(action==='productionLoad' || action==='productionSave' || estimateWrite) {
       const manufacturing=canSee('manufacturing');
       const purchasing=canSee('purchase');
@@ -113,7 +113,7 @@ export default async function handler(req,res) {
       if(result.state && !manufacturing) {
         const d=result.state;
         const stockView=purchasing ? {ingredients:d.ingredients,batches:d.batches,activity:d.activity} : {};
-        const salesView=sales ? {salesProjects:(d.tables||[]).filter(row=>row.recordType==='project'||['Commercial','Residential','Hospitality','Other project'].includes(row.kind)).map(({id,name})=>({id,name})),billingProducts:(d.menu||[]).map(({id,code,name,price,configuration})=>({id,code,name,price,configuration})),sales:d.sales,estimates:d.estimates||[],invoices:d.invoices||[]} : {};
+        const salesView=sales ? {salesProjects:(d.tables||[]).filter(row=>row.recordType==='project'||['Commercial','Residential','Hospitality','Other project'].includes(row.kind)).map(({id,name,address})=>({id,name,address})),billingProducts:(d.menu||[]).map(({id,code,name,price,configuration})=>({id,code,name,price,configuration})),sales:d.sales,estimates:d.estimates||[],invoices:d.invoices||[]} : {};
         result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
       }
       return res.json({...result,canWrite,canSeed:access.admin,email,

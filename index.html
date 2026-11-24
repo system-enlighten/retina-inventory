@@ -447,6 +447,8 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 .sales-pos-check{position:sticky;top:60px;min-width:0}
 .sales-pos-check .line>span{min-width:0;overflow-wrap:anywhere}
 @media(max-width:820px){.sales-pos-layout{display:flex;flex-direction:column}.sales-pos-layout>div,.sales-pos-check{width:100%}.sales-pos-check{position:static;order:-1}}
+.housing-card-spec{display:flex;flex-wrap:wrap;gap:5px 10px;margin:5px 0;color:var(--ink);font-size:12px;font-weight:700;line-height:1.4}
+.housing-card-spec>span{white-space:nowrap}
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
@@ -958,7 +960,7 @@ function mountRegister(root) {
         const parsedPrice = String(rawPrice ?? "").trim().replace(/[₹, ]/g, "");
         const price = /^\d+(?:\.\d{1,2})?$/.test(parsedPrice) ? Number(parsedPrice) : null;
         const fields = [row.fam,row.beam,row.mount,row.ip,row.heat,row.dim,row.kind,row.w,row.volt,row.cct,row.make,row.mode,row.load,row.typo,row.cur];
-        return {id:`${group}-${row.n}`, code:row.sku || defaults[group], aliases, group, image, balance, price, fam:row.fam || "",
+        return {id:`${group}-${row.n}`, code:row.sku || defaults[group], aliases, group, image, balance, price, fam:row.fam || "", beam:row.beam, dim:row.dim, watts:row.heat, lumens:row.lumens,
           name:String(row.name || row.code || product?.["Product Name"] || `${group} ${row.n}`),
           spec:fields.filter(Boolean).join(" · "), details:"legacy-details"};
       });
@@ -1031,6 +1033,38 @@ function mountRegister(root) {
     return sections || '<p class="muted">No products match this view.</p>';
   }
 
+  function housingCardSpecs(item) {
+    const catalogue = item.id.startsWith("Housing-") ? item : legacyProducts.find(row =>
+      row.group === "Housing" && row.aliases.includes(String(item.code).toUpperCase()));
+    if (!catalogue) return "";
+    const housing = housingRecord(catalogue);
+    const spec = housing?.spec || [];
+    const dim = catalogue.dim || spec[4] || "";
+    const diameter = String(dim).match(/(?:Diameter|Dia|Ø)\s*[:.]?\s*(\d+(?:\.\d+)?)/i)?.[1];
+    const opening = String(dim).match(/Opening\s*:\s*(\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?)?)/i)?.[1];
+    const beams = new Set();
+    for (const angle of [catalogue.beam,spec[1],...Object.values(housing?.variants || {}).map(row => row[0])]) {
+      for (const match of String(angle || "").matchAll(/(\d+(?:\.\d+)?)(?:\s*°?\s*[-–]\s*(\d+(?:\.\d+)?))?\s*°?/g)) {
+        beams.add(match[2] ? match[1] + "°–" + match[2] + "°" : match[1] + "°");
+      }
+    }
+    const power = value => Array.from(String(value || "").matchAll(/(\d+(?:\.\d+)?)\s*W\b(?!\s*\/)/gi),match => Number(match[1]));
+    const housingMax = Math.max(0,...power(catalogue.watts || spec[5]));
+    const leds = [...new Set((housing?.options || []).map(row => row[2]).filter(Boolean))]
+      .flatMap(id => housingData.led[id] || []);
+    const compatiblePower = leds.flatMap(row => power(row[2])).filter(watts => !housingMax || watts <= housingMax);
+    const watts = Math.max(0,...compatiblePower) || housingMax;
+    const flux = Number(String(catalogue.lumens || "").replace(/[,\s]/g,"").replace(/(?:lm|lumens?)$/i,""));
+    const dimensions = [
+      diameter && `<span aria-label="Diameter ${esc(diameter)} millimetres" title="Diameter"><span aria-hidden="true">⌀</span> ${esc(diameter)} mm</span>`,
+      opening && `<span aria-label="Opening ${esc(opening)} millimetres" title="Opening"><span aria-hidden="true">⊡</span> ${esc(opening.replace(/[xX]/g,"×"))} mm</span>`
+    ];
+    const values = [catalogue.fam || spec[0] ? `<span>${esc(catalogue.fam || spec[0])}</span>` : "",
+      ...dimensions,[watts ? watts + " W" : "",flux > 0 ? flux + " lm" : ""].filter(Boolean).join(" / "),
+      beams.size ? `<span aria-label="Beam angles ${esc([...beams].join(", "))}">${esc([...beams].join(" · "))}</span>` : ""].filter(Boolean);
+    return values.length ? `<div class="housing-card-spec">${values.map(value => `<span>${value}</span>`).join("")}</div>` : "";
+  }
+
   function playcard(item, index) {
     const image = item.image?.startsWith("./product_guide_assets/")
       ? "/production/" + item.image.slice(2) : item.image;
@@ -1038,7 +1072,7 @@ function mountRegister(root) {
       <div class="playcard-header draft">${catalogueIcon(item.group)}<span>${esc(item.group)}</span><span class="playcard-code">${esc(item.code)}</span></div>
       ${image ? `<div class="playcard-image"><span class="playcard-placeholder" aria-hidden="true">${catalogueIcon(item.group)}</span>
         <img src="${esc(image)}" alt="${esc(item.name)}" loading="${index < 12 ? "eager" : "lazy"}" ${index < 4 ? 'fetchpriority="high"' : ""} decoding="async" referrerpolicy="no-referrer"></div>` : ""}
-      <div class="playcard-copy"><h4>${["component-details","legacy-details","product-details"].includes(item.details) ? `<button type="button" class="playcard-title" data-action="${item.details}" data-id="${esc(item.id)}">${esc(item.name)}</button>` : esc(item.name)}</h4><p>${esc(item.spec)}</p>
+      <div class="playcard-copy"><h4>${["component-details","legacy-details","product-details"].includes(item.details) ? `<button type="button" class="playcard-title" data-action="${item.details}" data-id="${esc(item.id)}">${esc(item.name)}</button>` : esc(item.name)}</h4>${(item.group === "Housing" && housingCardSpecs(item)) || `<p>${esc(item.spec)}</p>`}
         ${item.variant ? `<small>${esc(item.variant)}</small>` : ""}
         ${item.status ? `<span class="tag ${item.warn ? "warn" : ""}">${esc(item.status)}</span>` : ""}
       </div>
@@ -1893,11 +1927,11 @@ function mountRegister(root) {
       ${item.count} × ${money(item.cents / 100)}</span>${btn("Remove","quote-remove",String(index),"mini")}</div>`).join("");
     const cards = legacyProducts.filter(item => item.group === "Housing").map(item => ({...item,
       action:project ? btn(housingRecord(item) ? "Configure" : "Add product","quote-product",item.id,"primary") : ""}));
-    const check = (project ? `<p><strong>${esc(project.name)}</strong></p>` : "") +
+    const check = (project ? `<p><strong>${esc(project.name)}</strong>${project.address ? `<br>${esc(project.address)}` : ""}</p>` : "") +
       (lines || empty(project ? "Choose products from the catalogue." : "Select a project to start an estimate.")) +
       (project && lines ? `<div class="row between total line"><strong>Total</strong><strong>${money(estimateTotal(quoteLines) / 100)}</strong></div>` +
         btn("Generate & view estimate","quote-save","","primary") : "");
-    return heading("","Sales POS","Select a project, then configure and price the products.",btn("Enter items manually","estimate-new")) +
+    return heading("","Sales POS","Select a project, then configure and price the products.",btn("+ Add Project","sales-project-new","","primary")) +
       `<div class="split sales-pos-layout"><div>${panel("","Projects",projectCards ? `<div class="tiles">${projectCards}</div>` : empty("No projects yet."),"plan")}
       ${panel("","Select Products",productCards(cards,{components:false}))}</div>
       <aside class="sales-pos-check">${panel("","Current Estimate",check)}</aside></div>`;
@@ -2000,7 +2034,11 @@ function mountRegister(root) {
     return format(template.head,{TITLE:title.toUpperCase(),DATE:date}).replace(/<div class="toolbar">.*?<\/div>/,"") + lines +
       format(template.tail,{TOTAL:money(estimateTotal(doc.items) / 100)}) +
       (footer ? `<tr><td colspan="${template.columnCount}">${footer}</td></tr>` : "") + template.terms + template.end.replace("</html>",`<style>
-      @media screen { table {zoom:var(--preview-scale,1)} }
+      @media screen {
+        html, body {height:100%;overflow:hidden}
+        .viewport {box-sizing:border-box;height:100%;overflow:auto}
+        table {zoom:var(--preview-scale,1)}
+      }
       </style><script>
       const sheet = document.querySelector("table");
       const sheetWidth = parseFloat(sheet.style.width);
@@ -2273,7 +2311,18 @@ function mountRegister(root) {
         render();
       } finally { savingQuote = false; }
     },
-    "estimate-new": () => reviseEstimate(null,null,true),
+    "sales-project-new": () => {
+      const id = crypto.randomUUID();
+      modal("Add Project",input("name","Project or person name") +
+        input("address","Address (optional)","","text","maxlength='500'"),
+        async form => {
+          await productionRequest("salesProjectCreate",{
+            estimate:{id,name:required(form,"name"),address:read(form,"address")}
+          });
+          quoteProject = id;
+          await loadProduction();
+        },"Add Project");
+    },
     "estimate-import": () => modal("Import Enlighten output",
       options("estimateTarget","Import into",[["new","New estimate"],...(db.estimates || []).filter(estimate => !estimate.payment)
         .map(estimate => [estimate.id,estimate.ref + " · " + estimate.name])],"new") +

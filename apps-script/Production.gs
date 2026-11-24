@@ -8,7 +8,7 @@ function productionRegister_(input) {
   var chunkSize = 40000;
   var chunkCount = 30;
   var fieldCount = 3 + chunkCount;
-  var salesMutation = ['estimateSave','estimateIssue','estimatePayment','estimateEdit','invoiceEdit','invoicePayment'].indexOf(input.action) !== -1;
+  var salesMutation = ['estimateSave','estimateIssue','estimatePayment','estimateEdit','invoiceEdit','invoicePayment','salesProjectCreate'].indexOf(input.action) !== -1;
   var isSave = input.action === 'productionSave' || salesMutation;
   var encoded = '';
   if (isSave && !salesMutation) {
@@ -76,6 +76,22 @@ function productionRegister_(input) {
 
 function retinaEstimateMutation_(state, input) {
   var data = input.estimate || {};
+  if (input.action === 'salesProjectCreate') {
+    var name = typeof data.name === 'string' ? data.name.trim() : '';
+    var address = typeof data.address === 'string' ? data.address.trim() : '';
+    if (typeof data.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(data.id) ||
+        !name || name.length > 120 || address.length > 500)
+      throw Error('Enter a project or person name and an optional address.');
+    var saved = state.tables.find(function(row) { return row.id === data.id; });
+    if (saved) {
+      if (saved.recordType === 'project' && saved.name === name && (saved.address || '') === address) return saved;
+      throw Error('This project identifier is already in use.');
+    }
+    var newProject = {id:data.id,name:name,address:address,kind:'Other project',recordType:'project',lines:[]};
+    state.tables.push(newProject);
+    return newProject;
+  }
+
   if (input.action === 'invoiceEdit' || input.action === 'invoicePayment') {
     var invoice = (state.invoices || []).find(function(row) { return row.id === data.id; });
     if (!invoice) throw Error('Invoice not found.');
