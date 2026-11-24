@@ -135,7 +135,11 @@ function retinaEstimateMutation_(state, input) {
       var kind = item.kind === 'Linear' ? 'Linear' : 'Basic';
       if (kind === 'Linear' && (!Number.isSafeInteger(item.lengthMm) || item.lengthMm < 1 || item.lengthMm > 1000000))
         throw Error('Every linear line needs a valid cut length in millimetres.');
-      return {sku:sku,name:String(item.name || "").slice(0,160),count:item.count,cents:item.cents,kind:kind,lengthMm:kind === 'Linear' ? item.lengthMm : null,
+      var configuration = item.configuration ? ['housing','variant','led','driver','code'].reduce(function(result,key) {
+        result[key] = String(item.configuration[key] || '').slice(0,100);
+        return result;
+      },{finished:item.configuration.finished === true}) : null;
+      return {sku:sku,name:String(item.name || "").slice(0,160),configuration:configuration,count:item.count,cents:item.cents,kind:kind,lengthMm:kind === 'Linear' ? item.lengthMm : null,
         sourceArticle:String(item.sourceArticle || '').slice(0,100),circuit:String(item.circuit || '').slice(0,100),
         floor:String(item.floor || '').slice(0,100),zone:String(item.zone || '').slice(0,100)};
     });
@@ -145,7 +149,10 @@ function retinaEstimateMutation_(state, input) {
       throw Error('Use technical output from the same project when issuing a revision.');
     estimate.name = name;
     estimate.items = items;
-    estimate.source = {projectId:String(source.projectId || '').slice(0,100),projectCode:String(source.projectCode || '').slice(0,100),
+    var localProjectId = String(source.localProjectId || existing && existing.source && existing.source.localProjectId || '').slice(0,100);
+    if (localProjectId && !state.tables.some(function(row) { return row.id === localProjectId && (row.recordType === 'project' || ['Commercial','Residential','Hospitality','Other project'].indexOf(row.kind) !== -1); }))
+      throw Error('Select an existing project.');
+    estimate.source = {localProjectId:localProjectId,projectId:String(source.projectId || '').slice(0,100),projectCode:String(source.projectCode || '').slice(0,100),
       technicalVersion:String(source.technicalVersion || '').slice(0,100)};
     if (input.action === 'estimateIssue') {
       estimate.versions = versions;
@@ -163,7 +170,8 @@ function retinaEstimateMutation_(state, input) {
   if (!reference || reference.length > 100 || !Number.isSafeInteger(data.cents) || data.cents < 1 || data.cents > total)
     throw Error('Enter a reference and an advance between zero and the issued estimate total.');
   var now = new Date().toISOString();
-  var project = issued.source.projectId && state.tables.find(function(row) {
+  var project = issued.source.localProjectId && state.tables.find(function(row) { return row.id === issued.source.localProjectId; });
+  if (!project && issued.source.projectId) project = state.tables.find(function(row) {
     return row.recordType === 'project' && row.enlightenProjectId === issued.source.projectId;
   });
   if (!project) {
@@ -177,7 +185,10 @@ function retinaEstimateMutation_(state, input) {
     issued.items.filter(function(item) { return item.kind === kind; }).forEach(function(item) {
       var matches = state.menu.filter(function(product) {
         return String(product.code || '').trim().toUpperCase() === item.sku && Object.keys(product.recipe || {}).length &&
-          (!item.lengthMm || product.linearLengthMm === item.lengthMm);
+          (!item.lengthMm || product.linearLengthMm === item.lengthMm) &&
+          (!item.configuration || product.configuration && ['housing','variant','led','driver','code'].every(function(key) {
+            return String(product.configuration[key] || '') === item.configuration[key];
+          }));
       });
       if (matches.length !== 1) { pending.push(item); return; }
       var product = matches[0];

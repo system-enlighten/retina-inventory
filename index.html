@@ -438,6 +438,11 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 .sales-bars.compact{min-height:0;grid-auto-columns:minmax(5px,1fr);gap:3px;min-width:115px}
 .sales-bars.compact .sales-bar-slot{height:30px}
 .sales-bars.compact .sales-bar-slot span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.billing-workspace,.billing-detail,.billing-detail header{background:transparent;border:0}
+.billing-detail header{padding:0 0 5px}
+.billing-toolbar{padding:4px 0 10px;border:0}
+.billing-toolbar .btn,.billing-heading .btn{font-size:.87rem;padding:7px 10px}
+.billing-paper{margin-top:6px;border:1px solid #d4cfc2;background:white}
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
@@ -715,7 +720,7 @@ function mountRegister(root) {
   function loadLegacyCatalogue() {
     return catalogueLoad ??= productionRequest("catalog").then(legacy => {
       legacyProducts = mergeLegacyCatalogue(legacy);
-      if (loaded && !directoryOpen && [0, 1, 2].includes(page)) render();
+      if (loaded && !directoryOpen && [0, 1, 2, 11].includes(page)) render();
     }).catch(() => {
       // The bundled catalogue remains available if the live catalogue is offline.
     }).finally(() => { catalogueLoad = null; });
@@ -754,7 +759,7 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis"];
+  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Build Estimate"];
   const departments = [
     {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
@@ -766,7 +771,7 @@ function mountRegister(root) {
   ];
   let allowedDepartments = null, department = null, directoryOpen = true;
   let page = 0, selected = db.tables[0]?.id, filter = "All", storageFilter = "";
-  const catalogState = { 0: { query: "", category: "" }, 1: { query: "", category: "" }, 2: { query: "", category: "" }, 3: { query: "", category: "" } };
+  const catalogState = { 0: { query: "", category: "" }, 1: { query: "", category: "" }, 2: { query: "", category: "" }, 3: { query: "", category: "" }, 11: { query: "", category: "" } };
   let capacityView = "configured";
 
   const note = message => { if(!controller.signal.aborted) $("status").textContent = message; };
@@ -1615,7 +1620,7 @@ function mountRegister(root) {
       return;
     }
     const requiresRegister = page !== 3 && page !== 4;
-    screen.innerHTML = department.id === "manufacturing" ? "" : heading("", department.name, department.scope);
+    screen.innerHTML = department.id === "manufacturing" || (department.id === "sales" && [8,9,11].includes(page)) ? "" : heading("", department.name, department.scope);
     if (!loaded && requiresRegister) {
       screen.insertAdjacentHTML("beforeend", productionLoad
         ? loadingMessage("Loading production register…")
@@ -1631,6 +1636,7 @@ function mountRegister(root) {
     else if(page === 6) screen.insertAdjacentHTML("beforeend", settings());
     else if(page === 8 || page === 9) screen.insertAdjacentHTML("beforeend", estimatesPage(page === 9));
     else if(page === 10) screen.insertAdjacentHTML("beforeend", salesAnalysis());
+    else if(page === 11) screen.insertAdjacentHTML("beforeend", quoteBuilder());
   }
 
   // Recipe row in BOM editor
@@ -1687,13 +1693,13 @@ function mountRegister(root) {
     });
   }
 
-  function configureHousing(item, tableId) {
+  function configureHousing(item, tableId, onQuote) {
     const housing = housingRecord(item);
     const finished = housing.finished && !housing.options.length;
     const candidates = finished ? [[item.code, "", "", ""]] : housing.options;
     const choices = [...new Set(candidates.map(row => row[1]))];
     const variants = [...new Set([...Object.keys(housing.variants), ...choices])];
-    let variant = choices[0] ?? variants[0] ?? "";
+    let variant = onQuote && variants.length && !finished ? null : (choices[0] ?? variants[0] ?? "");
     let led = "", driver = "";
     const variantRows = variants.map(code => [code, [housing.variants[code] || []]]);
     const variantTable = variants.length && !finished ? configurationTable(
@@ -1718,6 +1724,7 @@ function mountRegister(root) {
     const ledSlot = $("housing-led"), driverSlot = $("housing-driver"), resultSlot = $("housing-selection");
 
     function refresh(change) {
+      if (variant === null) { resultSlot.textContent = "Select a housing variant to see matching LEDs and drivers."; return; }
       const byVariant = candidates.filter(row => row[1] === variant);
       const leds = [...new Set(byVariant.map(row => row[2]))];
       if (!leds.includes(led)) led = leds[0];
@@ -1742,7 +1749,7 @@ function mountRegister(root) {
       }
       const [code, v, selectedLed, selectedDriver] = chosen;
       const configuration = {housing:item.id, variant:v, led:selectedLed, driver:selectedDriver, code, finished};
-      const registered = db.menu.find(product => sameHousingConfiguration(product.configuration, configuration));
+      const registered = (db.billingProducts || db.menu).find(product => sameHousingConfiguration(product.configuration, configuration));
       const unresolved = !finished && (!led || !driver || housingData.led[led]?.length !== 1 || housingData.drivers[driver]?.length !== 1
         || (v && !housing.variants[v]));
       const registeredParts = Object.entries(registered?.recipe || {});
@@ -1753,8 +1760,18 @@ function mountRegister(root) {
         ${registeredParts.length ? `<ul>${registeredParts.map(([sku,qty]) => `<li>${esc(sku)} · ${esc(qty)} ${esc(find(db.ingredients,sku)?.unit)}</li>`).join("")}</ul>` : ""}
         ${unresolved ? empty("Resolve missing or ambiguous article references in the source sheet before approving this configuration.") : ""}
         <div class="row" id="housing-config-action"></div>`;
-      if (!canWrite || unresolved) return;
       const action = $("housing-config-action");
+      if (onQuote) {
+        if (!unresolved) {
+          action.innerHTML = '<button type="button" class="btn primary">Add to estimate</button>';
+          action.firstElementChild.onclick = () => {
+            dialog.close();
+            onQuote({code,name:item.name,price:registered?.price ?? item.price,configuration});
+          };
+        }
+        return;
+      }
+      if (!canWrite || unresolved) return;
       if (registered && tableId) {
         action.innerHTML = '<button type="button" class="btn primary">Add to project</button>';
         action.firstElementChild.onclick = async event => {
@@ -1850,6 +1867,37 @@ function mountRegister(root) {
     return id;
   }
 
+  let quoteProject = "", quoteLines = [], quoteId = "", savingQuote = false;
+  function quoteProjects() {
+    return db.salesProjects || db.tables.filter(isProject);
+  }
+
+  function quoteBuilder() {
+    const project = find(quoteProjects(),quoteProject);
+    const lines = quoteLines.map((item,index) => `<tr><td>${esc(item.name)}<br>${esc(item.sku)}</td>
+      <td>${item.count}</td><td>${money(item.cents / 100)}</td><td>${btn("Remove","quote-remove",String(index),"mini")}</td></tr>`).join("");
+    const cards = legacyProducts.filter(item => item.group === "Housing").map(item => ({...item,
+      action:project ? btn(housingRecord(item) ? "Configure" : "Add product","quote-product",item.id,"primary") : ""}));
+    return heading("","New Estimate","Select a project, then configure and price the products.",btn("Back to estimates","page","8") + btn("Enter items manually","estimate-new")) +
+      `<label>Project<select name="quote-project"><option value="">Select a project</option>${quoteProjects().map(row =>
+        `<option value="${esc(row.id)}" ${row.id === quoteProject ? "selected" : ""}>${esc(row.name)}</option>`).join("")}</select></label>` +
+      panel("","Estimate items",(lines ? grid(["Product","Quantity","Unit price",""],lines) : empty("No products added.")) +
+        (project && lines ? `<p>Total · ${money(estimateTotal(quoteLines) / 100)}</p>` + btn("Generate & view estimate","quote-save","","primary") : "")) +
+      panel("","Select Products",productCards(cards,{components:false}));
+  }
+
+  function addQuoteProduct(item) {
+    modal("Add " + item.name,`<p>${esc(item.code)}</p>` + amount("quantity","Quantity",1) +
+      billingPrice(0,item.price > 0 ? item.price : "") + input("circuit","Circuit number","","text","maxlength='100'"),
+      form => {
+        if (quoteLines.length >= 300) throw Error("An estimate supports up to 300 lines.");
+        const count = number(read(form,"quantity"),1);
+        const cents = number(read(form,"price0"),100);
+        quoteLines.push({sku:item.code,name:item.name,count,cents,circuit:read(form,"circuit"),configuration:item.configuration});
+        render();
+      },"Add to estimate");
+  }
+
   let salesPeriod = 12, salesProject = "";
   function salesAnalysis() {
     const current = day().slice(0,7).split("-").map(Number);
@@ -1924,7 +1972,8 @@ function mountRegister(root) {
       "BILL OF QUANTITIES FOR LIGHT FITTINGS · " + doc.title + " · " + doc.estimate.ref + " · " +
       (doc.issued.issuedAt ? estimateVersion(doc.issued) : "DRAFT");
     const lines = doc.items.map(item => format(template.line,{0:item.circuit,1:(item.name || item.sourceArticle || item.sku) + (item.lengthMm ? "\n" + item.lengthMm + " mm" : ""),
-      4:item.sku,16:item.count.toFixed(2),19:money(item.cents / 100),20:money(item.count * item.cents / 100)})).join("");
+      4:item.sku,5:item.configuration?.led ? "LED " + item.configuration.led : "",
+      14:item.configuration?.driver,16:item.count.toFixed(2),19:money(item.cents / 100),20:money(item.count * item.cents / 100)})).join("");
     const footer = doc.invoice ? `<div style="padding:16px;font:14px Arial"><p>Dispatch ${esc(doc.invoice.dispatchRef)}</p>
       <p>${esc(doc.invoice.note || "")}</p><p>Advance applied · ${esc(money(doc.invoice.advanceCents / 100))}</p><p>Balance before tax · ${esc(money(invoiceBalance(doc.invoice) / 100))}</p></div>` : "";
     return format(template.head,{TITLE:title.toUpperCase(),DATE:date}).replace(/<div class="toolbar">.*?<\/div>/,"") + lines +
@@ -1956,11 +2005,11 @@ function mountRegister(root) {
       btn("Print / Save PDF","billing-print") + btn("Record Payment","billing-payment",key) : "";
     const history = doc?.estimate?.versions?.length > 1 ? doc.estimate.versions.map(version => btn(estimateVersion(version),"billing-select",doc.id + ":" + version.revision,doc.issued === version ? "primary" : "")).join("") : "";
     const status = doc?.estimate?.payment ? "Advance recorded" : doc?.invoice ? doc.invoice.status || "Draft" : latest ? "Issued" : "Draft";
-    return heading("",invoices ? "Invoices" : "Estimates","",invoices ? "" :
-      btn("+ Add New Estimate","estimate-new") + btn("Import Enlighten output","estimate-import","","primary")) +
+    return `<div class="billing-heading">` + heading("",invoices ? "Invoices" : "Estimates","",invoices ? "" :
+      btn("+ Add New Estimate","quote-open") + btn("Import Enlighten output","estimate-import","","primary")) + "</div>" +
       `<section class="billing-workspace"><div class="billing-detail">${doc ? `<header><strong>${esc(doc.title)}</strong><small>${esc(doc.invoice?.id || doc.estimate.ref)} · ${status}</small></header>
       <nav class="row billing-toolbar" aria-label="${label} actions">${actions}</nav>
-      <iframe id="billing-preview" title="${label} document" srcdoc="${esc(documentHTML(doc))}"></iframe>` : empty("No " + label.toLowerCase() + "s yet.")}</div>
+      <div class="billing-paper"><iframe id="billing-preview" title="${label} document" srcdoc="${esc(documentHTML(doc))}"></iframe></div>` : empty("No " + label.toLowerCase() + "s yet.")}</div>
       ${list ? `<nav class="billing-tabs" aria-label="${label} list">${list}${history}</nav>` : ""}</section>`;
   }
 
@@ -2154,7 +2203,8 @@ function mountRegister(root) {
         if (!sheet || sheet.status !== "Draft") throw Error("Open a draft production sheet first.");
         sheet.pending = sheet.pending.filter(item => {
           const matches = data.menu.filter(product => String(product.code || "").trim().toUpperCase() === item.sku && Object.keys(product.recipe || {}).length &&
-            (!item.lengthMm || product.linearLengthMm === item.lengthMm));
+            (!item.lengthMm || product.linearLengthMm === item.lengthMm) &&
+            (!item.configuration || sameHousingConfiguration(product.configuration,item.configuration)));
           if (matches.length !== 1) return true;
           const product = matches[0];
           sheet.lines.push({id:uid(),dish:product.id,name:product.name,code:item.sku,group:product.group,count:item.count,
@@ -2165,6 +2215,27 @@ function mountRegister(root) {
       });
       $("dialog").close();
       actions["production-sheet"](id);
+    },
+    "quote-open": () => { quoteId ||= crypto.randomUUID(); page = 11; render(); },
+    "quote-remove": index => { quoteLines.splice(Number(index),1); render(); },
+    "quote-product": id => {
+      if (!find(quoteProjects(),quoteProject)) throw Error("Select a project first.");
+      const item = find(legacyProducts,id);
+      if (!item) return;
+      if (housingRecord(item)) configureHousing(item,null,addQuoteProduct);
+      else addQuoteProduct(item);
+    },
+    "quote-save": async () => {
+      const project = find(quoteProjects(),quoteProject);
+      if (!project || !quoteLines.length) throw Error("Select a project and add products first.");
+      if (savingQuote) return;
+      savingQuote = true;
+      try {
+        await saveEstimate("estimateSave",{id:quoteId,name:project.name,source:{localProjectId:project.id},items:quoteLines});
+        quoteLines = []; quoteId = "";
+        page = 8;
+        render();
+      } finally { savingQuote = false; }
     },
     "estimate-new": () => reviseEstimate(null,null,true),
     "estimate-import": () => modal("Import Enlighten output",
@@ -2787,6 +2858,7 @@ function mountRegister(root) {
   
   listen(root, "change", event => {
     const {name,value} = event.target;
+    if (name === "quote-project") { quoteProject = value; render(); return; }
     if (name !== "sales-period" && name !== "sales-project") return;
     if (name === "sales-period") salesPeriod = Number(value);
     else salesProject = value;
@@ -2832,6 +2904,7 @@ function mountRegister(root) {
   
   listen(root, "change", event => {
     const {name,value} = event.target;
+    if (name === "quote-project") { quoteProject = value; render(); return; }
     if (name !== "sales-period" && name !== "sales-project") return;
     if (name === "sales-period") salesPeriod = Number(value);
     else salesProject = value;
