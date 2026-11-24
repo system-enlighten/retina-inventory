@@ -1,3 +1,4 @@
+import housingDatabase from "../server/housing-database.js";
 import housingData from "../server/housing-config-data.js";
 import crypto from 'node:crypto';
 import { OAuth2Client, JWT } from 'google-auth-library';
@@ -117,7 +118,8 @@ export default async function handler(req,res) {
         result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
       }
       return res.json({...result,canWrite,canSeed:access.admin,email,
-        ...(action === "productionLoad" && (manufacturing || sales) ? {housingData} : {})});
+        ...(action === "productionLoad" && (manufacturing || sales) ? {housingData} : {}),
+        ...(action === "productionLoad" && manufacturing ? {housingDatabase} : {})});
     }
     if(action==='catalog') {
       const canReadStock=canSee('manufacturing') || canSee('purchase');

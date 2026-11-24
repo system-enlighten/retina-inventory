@@ -463,6 +463,7 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&amp;display=swap">
 </head><body>
 <div id="app" class="retina-inventory-pos directory-open">
 <style id="app-styles"></style>
@@ -758,6 +759,7 @@ function mountRegister(root) {
       db = result.state || newRegister(false);
       revision = result.revision;
       housingData = result.housingData || null;
+      housingDatabase = result.housingDatabase || null;
       canWrite = result.canWrite;
       canSeed = result.canSeed;
       loaded = true;
@@ -1434,7 +1436,7 @@ function mountRegister(root) {
       ["Under Production", sheets.filter(sheet => sheet.status === "Assigned"), "No sheets assigned to production."],
       ["Completed Tasks", sheets.filter(sheet => ["Built", "Dispatched"].includes(sheet.status)), "No completed production sheets."]
     ];
-    return panel("", "Up for Production", queue) + '<div class="production-queue">' + groups.map(([title, rows, noRows]) => panel("", title,
+    return '<div class="production-queue">' + panel("", "Up for Production", queue) + groups.map(([title, rows, noRows]) => panel("", title,
       rows.length ? '<ul>' + rows.map(sheet => `<li><strong>${esc(sheet.name)}</strong>
         <small>${esc([salesOrderDetails(db,sheet).ref, sheet.ref, sheet.bench, sheet.status === "Built" ? "Ready to dispatch" : sheet.status === "Dispatched" ? "Dispatched" : ""].filter(Boolean).join(" · "))}</small>
         ${btn("Open sheet", "production-sheet", sheet.id, "mini")}</li>`).join("") + '</ul>' : empty(noRows))).join("") + '</div>';
@@ -1686,10 +1688,42 @@ function mountRegister(root) {
     return productCards(products, {components:false});
   }
 
+  let housingDatabase = null, bomView = "all";
+
+  function housingDatabaseTable() {
+    if (!housingDatabase) return empty("Housing Database is unavailable. Reload the production register.");
+    const {headers,rows} = housingDatabase;
+    const shown = rows.filter(row => {
+      const linear = Number(row[0]) >= 200 && Number(row[0]) <= 400;
+      return bomView === "all" || (bomView === "linear" ? linear : !linear);
+    });
+    const widths = [56,120,108,85,177,112,145,68,142,100,58,58,156,88,85,125,155,95,128,60,87,72,115];
+    const columns = widths.map(width => `<col style="width:${width}px">`).join("");
+    const header = headers.map(label => `<th scope="col">${esc(label)}</th>`).join("");
+    const body = shown.map(row => `<tr>${headers.map((_,column) => {
+      const tag = column === 0 ? "th" : "td";
+      const thumbnail = column === 1 && localThumbnails["Housing-" + row[0]];
+      const style = [5,6,7,14,19,20,21].includes(column) ? ' class="housing-spec-emphasis"' : "";
+      return `<${tag}${column === 0 ? ' scope="row"' : ''}${style}>${thumbnail
+        ? `<img loading="lazy" decoding="async" src="${esc(thumbnail)}" alt="${esc(row[4] || "Housing " + row[0])}">`
+        : esc(row[column])}</${tag}>`;
+    }).join("")}</tr>`).join("");
+    const title = bomView === "linear" ? "Linear Database" : bomView === "other" ? "Other Housings" : "Housing Database";
+    return `<div class="housing-database-scroll" tabindex="0" role="region" aria-label="${title}">
+      <table class="housing-database-grid" style="width:${sum(widths)}px">
+        <caption class="housing-database-caption">${title} · ${shown.length} entries</caption>
+        <colgroup>${columns}</colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody>
+      </table></div>`;
+  }
+
   // Tab 03: BOM & Specifications
   function recipes() {
-    return heading("03 / BOM & Product specifications", "Bill of Materials", "Define standard luminaire models, base pricing, and bill of materials required for assembly.", btn("+ Add Luminaire", "dish", "", "primary")) +
-      (staffCatalog() || empty("Add components in stockroom first, then configure luminaire BOMs."));
+    const tabs = [["all","Housing Database"],["linear","Linear Database"],["other","Other Housings"],["bom","Bill of Materials"]];
+    return heading("", "BOM", "", bomView === "bom" && canWrite ? btn("+ Add Luminaire","dish","","primary") : "") +
+      '<nav class="row nomen-view" aria-label="BOM views">' + tabs.map(([id,label]) =>
+        `<button type="button" class="btn ${bomView === id ? "primary" : ""}" data-action="bom-view" data-id="${id}"
+          aria-pressed="${bomView === id}">${label}</button>`).join("") + '</nav>' +
+      (bomView === "bom" ? staffCatalog() : housingDatabaseTable());
   }
 
   // Tab 04: Official 66-Page Architectural Catalogue (Native HTML Publication)
@@ -2452,6 +2486,11 @@ function mountRegister(root) {
 
   // Actions Dispatcher
   const actions = {
+    "bom-view": id => {
+      bomView = id;
+      render();
+      root.querySelector('[data-action="bom-view"][aria-pressed="true"]')?.focus({preventScroll:true});
+    },
     "direct-add": id => {
       const stock = new Map();
       for (const batch of db.batches) stock.set(batch.ingredient,(stock.get(batch.ingredient) || 0) + batch.left);
@@ -4115,7 +4154,7 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
 }
 
 .production-queue,.station-slots{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}
-.production-queue{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:14px}
+.production-queue{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:14px}
 .production-queue .panel{min-width:0;margin:0}
 .production-queue ul{list-style:none;margin:0;padding:0}
 .production-queue li{display:grid;gap:4px;padding:8px 0;border-bottom:1px solid var(--soft)}
@@ -4138,6 +4177,19 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
 .manufacturing-attendance .draft{color:var(--muted)}
 
 .dispatch-invoice-preview{display:block;width:100%;height:55vh;border:1px solid var(--rule);background:white}
+
+.housing-database-scroll{max-height:72vh;overflow:auto;border:1px solid #ccc;background:white}
+.housing-database-scroll:focus-visible{outline:2px solid var(--rust);outline-offset:2px}
+:where(.retina-inventory-pos) .housing-database-grid{table-layout:fixed;border-collapse:separate;border-spacing:0;background:white;color:#222}
+.housing-database-caption{text-align:left;padding:8px;font:10pt "Fira Code",Consolas,monospace}
+.retina-inventory-pos .housing-database-grid :is(th,td){
+  border:0;border-right:1px solid #d0d0d0;border-bottom:1px solid #d0d0d0;
+  padding:7px 5px;text-align:center;vertical-align:middle;white-space:pre-wrap;overflow-wrap:anywhere;
+  text-transform:none;letter-spacing:normal;color:#222;background:#fff;font:10pt/1.4 "Fira Code",Consolas,monospace
+}
+.retina-inventory-pos .housing-database-grid thead th{position:sticky;top:0;z-index:1;font-size:11pt;font-weight:700}
+.retina-inventory-pos .housing-database-grid .housing-spec-emphasis{font-family:"Helvetica Neue",Arial,sans-serif;font-weight:700}
+.housing-database-grid img{display:block;max-width:100%;height:68px;object-fit:contain;margin:auto}
 
 `;
 document.getElementById('app-styles').textContent = styles;
