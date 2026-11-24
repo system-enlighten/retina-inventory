@@ -782,9 +782,9 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS", "Teams & Tasks"];
+  const pages = ["Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS", "Teams & Tasks", "Production Sheets"];
   const departments = [
-    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6,12]},
+    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,13,1,2,3,4,5,6,12]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
     {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[11,8,9,10,3,5]},
     {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
@@ -797,6 +797,7 @@ function mountRegister(root) {
   const catalogState = { 0: { query: "", category: "" }, 1: { query: "", category: "" }, 2: { query: "", category: "" }, 3: { query: "", category: "" }, 11: { query: "", category: "" } };
   let capacityView = "configured";
   const attendanceDay = now => now.toLocaleDateString("sv-SE", {timeZone:"Asia/Kolkata"});
+  let productionKind = "Basic";
   let attendanceDate = attendanceDay(new Date()), attendanceEngineer = "";
 
   const note = message => { if(!controller.signal.aborted) $("status").textContent = message; };
@@ -1302,6 +1303,96 @@ function mountRegister(root) {
     </figure>${legacy.length ? '<h3>Other workbenches</h3>' + areaTables(legacy) : ""}`;
   }
 
+  function productionReviewPending(data, sheet) {
+    return Boolean(find(data.estimates || [],sheet.estimateId)?.productionUpload);
+  }
+
+  async function readTechnicalOutput(file) {
+    if (!file?.size || file.size > 1000000) throw Error("Select an Enlighten JSON export under 1 MB.");
+    let output;
+    try { output = JSON.parse(await file.text()); }
+    catch { throw Error("This file is not a valid Enlighten JSON export."); }
+    if (output?.schema !== "enlighten-retina-v1" || typeof output.projectId !== "string" || !output.projectId.trim() ||
+        !Array.isArray(output.items) || !output.items.length || output.items.length > 300 ||
+        output.items.some(item => typeof item?.sku !== "string" || !item.sku.trim() ||
+          !Number.isSafeInteger(item.count) || item.count < 1 || item.count > 1000000 ||
+          !["Basic","Linear"].includes(item.kind) ||
+          (item.kind === "Linear" && (!Number.isSafeInteger(item.lengthMm) || item.lengthMm < 1))))
+      throw Error("Export a completed Product Technical Table with 1–300 lines from Enlighten.");
+    const field = value => String(value ?? "").trim().slice(0,120);
+    return {projectId:field(output.projectId),version:field(output.technicalVersion),
+      items:output.items.map(item => ({sku:field(item.sku),kind:item.kind,count:item.count,
+        lengthMm:item.kind === "Linear" ? item.lengthMm : null,circuit:field(item.circuit),floor:field(item.floor),zone:field(item.zone)}))};
+  }
+
+  function editableProductionOrder(data,id) {
+    const estimate = find(data.estimates || [],id);
+    if (!estimate?.payment) throw Error("Select a released Sales Order.");
+    if ((data.productionSheets || []).some(sheet => sheet.estimateId === id && sheet.status !== "Draft"))
+      throw Error("A sheet for this order has already been sent to production.");
+    return estimate;
+  }
+
+  function finalizeProductionOutput(data,id,codes) {
+    const estimate = editableProductionOrder(data,id);
+    const upload = estimate.productionUpload;
+    if (!upload || codes.length !== upload.items.length) throw Error("Upload the Enlighten output before finalizing.");
+    const issued = estimate.versions.find(version => version.revision === estimate.payment.revision);
+    if (!issued) throw Error("The confirmed estimate revision is missing.");
+    const existing = (data.productionSheets || []).filter(sheet => sheet.estimateId === id);
+    const project = find(data.tables,existing[0]?.projectId || issued.source?.localProjectId);
+    if (!project) throw Error("The Sales Order project is missing.");
+    const remaining = issued.items.map(item => ({...item,left:item.count}));
+    const sheets = new Map();
+    upload.items.forEach((item,index) => {
+      const code = codes[index].trim().toUpperCase();
+      const matches = data.menu.filter(product => String(product.code || "").trim().toUpperCase() === code &&
+        Object.keys(product.recipe || {}).length && (!item.lengthMm || product.linearLengthMm === item.lengthMm));
+      if (matches.length !== 1) throw Error("Row " + (index+1) + " needs a unique Retina code with a BOM and matching cut length.");
+      const product = matches[0];
+      if (!sheets.has(item.kind)) sheets.set(item.kind,[]);
+      const lines = sheets.get(item.kind);
+      let quantity = item.count;
+      for (const sale of remaining) {
+        if (!quantity || !sale.left || sale.sku !== code || (sale.lengthMm && sale.lengthMm !== item.lengthMm) ||
+            (sale.configuration && !sameHousingConfiguration(product.configuration,sale.configuration))) continue;
+        const count = Math.min(quantity,sale.left);
+        sale.left -= count;
+        quantity -= count;
+        lines.push({...item,sourceArticle:item.sku,id:uid(),dish:product.id,name:product.name,code,group:product.group,count,
+          price:sale.cents/100,recipe:structuredClone(product.recipe),configuration:product.configuration,bomRevision:product.bomRevision});
+      }
+      if (quantity) throw Error("Row " + (index+1) + " exceeds the confirmed quantity for " + code + ".");
+    });
+    if (remaining.some(item => item.left)) throw Error("Map all confirmed Sales Order quantities before finalizing.");
+    const order = salesOrderDetails(data,{estimateId:id,ref:estimate.ref});
+    data.productionSheets = (data.productionSheets || []).filter(sheet => sheet.estimateId !== id);
+    for (const [kind,lines] of sheets) {
+      data.productionSheets.push({id:uid(),projectId:project.id,name:project.name,ref:order.ref + "-" + kind.toUpperCase(),
+        estimateId:id,estimateRevision:issued.revision,salesOrderRef:order.ref,kind,lines,pending:[],status:"Draft",
+        createdAt:order.releasedAt || new Date().toISOString(),paymentRequired:true,technicalVersion:upload.version});
+    }
+    estimate.salesOrder = {...order,route:"Enlighten technical table"};
+    estimate.productionSource = {projectId:upload.projectId,version:upload.version};
+    delete estimate.productionUpload;
+  }
+
+  function productionSheetsPage() {
+    const sheets = (db.productionSheets || []).filter(sheet => (sheet.kind === "Linear" ? "Linear" : "Basic") === productionKind);
+    const reviews = (db.estimates || []).filter(estimate => estimate.productionUpload);
+    const tabs = ["Basic","Linear"].map(kind => btn(kind + " Production Sheet","production-kind",kind,productionKind === kind ? "primary" : "")).join("");
+    return heading("", "Production Sheets", "Upload the Enlighten technical table, map Retina codes, and finalize the sheets before assigning a workbench.",
+      canWrite ? btn("Upload Enlighten Output","production-upload","","primary") : "") +
+      (reviews.length ? panel("", "Awaiting mapping review", reviews.map(estimate =>
+        `<div class="row between line"><strong>${esc(estimate.name)} · ${esc(estimate.salesOrder?.ref || estimate.ref)}</strong>
+         ${canWrite ? btn("Map & Review","production-review",estimate.id) : ""}</div>`).join("")) : "") +
+      `<nav class="row nomen-view" aria-label="Production sheet types">${tabs}</nav>` +
+      panel("", productionKind + " Production Sheet", sheets.length ? grid(["Sheet","Project","Status",""],sheets.map(sheet =>
+        `<tr><th scope="row">${esc(sheet.ref)}</th><td>${esc(sheet.name)}</td>
+        <td>${esc(productionReviewPending(db,sheet) ? "Technical mapping review" : sheet.status)}</td>
+        <td>${btn("Open sheet","production-sheet",sheet.id,"mini")}</td></tr>`).join("")) : empty("No production sheets in this view."));
+  }
+
   function salesOrderDetails(data, sheet) {
     const estimate = find(data.estimates || [], sheet.estimateId);
     return estimate?.salesOrder || {
@@ -1322,7 +1413,7 @@ function mountRegister(root) {
   }
 
   function nextReadySheet(data) {
-    return orderedDrafts(data).find(sheet => sheet.lines.length && !sheet.pending?.length);
+    return orderedDrafts(data).find(sheet => sheet.lines.length && !sheet.pending?.length && !productionReviewPending(data,sheet));
   }
 
   function productionQueue() {
@@ -1331,11 +1422,12 @@ function mountRegister(root) {
     const next = nextReadySheet(db);
     const queue = waiting.length ? grid(["Queue","Sales order","Project","Production route","Priority","Status",""], waiting.map((sheet,index) => {
       const order = salesOrderDetails(db,sheet);
+      const reviewing = productionReviewPending(db,sheet);
       const blocked = sheet.pending?.length || !sheet.lines.length;
       return `<tr><td>${index+1}</td><th scope="row">${esc(order.ref)}</th><td>${esc(sheet.name)}</td>
         <td>${esc(order.route)}${sheet.kind && sheet.kind !== "Direct" ? " · " + esc(sheet.kind) : ""}</td>
         <td>${esc(order.priority)}${order.priorityReason ? "<small> · " + esc(order.priorityReason) + "</small>" : ""}</td>
-        <td>${blocked ? "Awaiting BOM match" : sheet.id === next?.id ? "Next ready" : "Ready"}</td>
+        <td>${reviewing ? "Technical mapping review" : blocked ? "Awaiting BOM match" : sheet.id === next?.id ? "Next ready" : "Ready"}</td>
         <td>${btn("Open sheet","production-sheet",sheet.id,"mini")}</td></tr>`;
     }).join("")) : empty("No released sales orders are waiting for production.");
     const groups = [
@@ -1870,6 +1962,7 @@ function mountRegister(root) {
     else if(page === 10) screen.insertAdjacentHTML("beforeend", salesAnalysis());
     else if(page === 11) screen.insertAdjacentHTML("beforeend", quoteBuilder());
     else if(page === 12) screen.insertAdjacentHTML("beforeend", manufacturingTeam());
+    else if(page === 13) screen.insertAdjacentHTML("beforeend", productionSheetsPage());
   }
 
   // Recipe row in BOM editor
@@ -2266,8 +2359,7 @@ function mountRegister(root) {
       btn("Print / Save PDF","billing-print") + (invoices || !doc.estimate.payment ? btn(invoices ? "Record Payment" : "Confirm & Release Sales Order","billing-payment",key) : "") : "";
     const history = doc?.estimate?.versions?.length > 1 ? doc.estimate.versions.map(version => btn(estimateVersion(version),"billing-select",doc.id + ":" + version.revision,doc.issued === version ? "primary" : "")).join("") : "";
     const status = doc?.estimate?.payment ? (doc.estimate.salesOrder ? "Released · " + doc.estimate.salesOrder.ref : "Advance recorded") : doc?.invoice ? doc.invoice.status || "Draft" : latest ? "Issued" : "Draft";
-    return `<div class="billing-heading">` + heading("",invoices ? "Invoices" : "Estimates","",invoices ? "" :
-      btn("Import Enlighten output","estimate-import","","primary")) + "</div>" +
+    return `<div class="billing-heading">` + heading("",invoices ? "Invoices" : "Estimates","") + "</div>" +
       `<section class="billing-workspace"><div class="billing-detail">${doc ? `<header><strong>${esc(doc.title)}</strong><small>${esc(doc.invoice?.id || doc.estimate.ref)} · ${esc(status)}</small></header>
       <nav class="row billing-toolbar" aria-label="${label} actions">${actions}</nav>
       <div class="billing-paper"><iframe id="billing-preview" title="${label} document" srcdoc="${esc(documentHTML(doc))}"></iframe></div>` : empty("No " + label.toLowerCase() + "s yet.")}</div>
@@ -2463,6 +2555,41 @@ function mountRegister(root) {
           else throw Error("Select an engineer from the team register.");
         }));
     },
+    "production-kind": kind => { productionKind = kind; render(); },
+    "production-upload": () => {
+      const orders = (db.estimates || []).filter(estimate => estimate.payment &&
+        !(db.productionSheets || []).some(sheet => sheet.estimateId === estimate.id && sheet.status !== "Draft"));
+      if (!orders.length) throw Error("Release a Sales Order before uploading its technical table.");
+      modal("Upload Enlighten Output",
+        options("estimateId","Sales Order",orders.map(estimate => [estimate.id,(estimate.salesOrder?.ref || estimate.ref) + " · " + estimate.name]),orders[0].id) +
+        '<label>Product Technical Table export<input name="transfer" type="file" accept=".json,application/json" required></label>',
+        async form => {
+          const id = required(form,"estimateId"), output = await readTechnicalOutput(form.get("transfer"));
+          await update(data => {
+            const estimate = editableProductionOrder(data,id);
+            const issued = estimate.versions.find(version => version.revision === estimate.payment.revision);
+            const projectId = estimate.productionSource?.projectId || issued?.source?.projectId;
+            if (projectId && projectId !== output.projectId) throw Error("Select the Enlighten export for this Sales Order’s project.");
+            estimate.productionUpload = output;
+          });
+          return () => actions["production-review"](id);
+        },"Upload & map products");
+    },
+    "production-review": id => {
+      const estimate = editableProductionOrder(db,id);
+      const upload = estimate.productionUpload;
+      if (!upload) throw Error("Upload the Enlighten output first.");
+      const rows = upload.items.map((item,index) => `<tr><th scope="row">${index+1} · ${esc(item.sku)}</th>
+        <td>${esc(item.kind)} · ${cutLength(item)}</td><td>${sourceLocation(item)}</td><td>${item.count}</td>
+        <td>${input("map"+index,"Retina code",item.sku,"text","required maxlength='100' list='production-bom-codes'")}</td></tr>`).join("");
+      const codes = [...new Set(db.menu.filter(product => product.code && Object.keys(product.recipe || {}).length).map(product => product.code))];
+      modal("Map & Review · " + estimate.name,
+        '<p>Check each Retina code against the confirmed Sales Order before finalizing.</p>' +
+        '<datalist id="production-bom-codes">' + codes.map(code => `<option value="${esc(code)}"></option>`).join("") + '</datalist>' +
+        grid(["Source code","Type / cut length","Location","Qty","Mapping"],rows),
+        form => update(data => finalizeProductionOutput(data,id,upload.items.map((_,index) => required(form,"map"+index)))),
+        "Finalize production sheets");
+    },
     "production-sheet": id => {
       const sheet = find(db.productionSheets || [],id);
       if (!sheet) return;
@@ -2488,7 +2615,7 @@ function mountRegister(root) {
           pending.map(item => `<li>${esc(item.sku)} × ${esc(item.count)} · ${cutLength(item)} · ${sourceLocation(item)}</li>`).join("") + "</ul>" +
           (canWrite ? btn("Match products again","production-sheet-match",id) : "") : "") +
         (sheet.status === "Draft" && sheet.lines.length && !pending.length && canWrite ?
-          sheet.id !== next?.id ? empty("Assign the earlier ready sheet in the queue first.") : benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id, stationLabel(db, bench)]),benches[0].id)
+          productionReviewPending(db,sheet) ? empty("Finalize the technical mapping in Production Sheets first.") : sheet.id !== next?.id ? empty("Assign the earlier ready sheet in the queue first.") : benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id, stationLabel(db, bench)]),benches[0].id)
             : empty("Create or free a workbench before sending this sheet.") : ""),
         canAssign ? form => update(data => {
           const current = nextReadySheet(data);
@@ -2568,29 +2695,6 @@ function mountRegister(root) {
           await loadProduction();
         },"Add Project");
     },
-    "estimate-import": () => modal("Import Enlighten output",
-      options("estimateTarget","Import into",[["new","New estimate"],...(db.estimates || []).filter(estimate => !estimate.payment)
-        .map(estimate => [estimate.id,estimate.ref + " · " + estimate.name])],"new") +
-      '<label>Product Technical Table export<input name="transfer" type="file" accept=".json,application/json" required></label>',
-      async form => {
-        const file = form.get("transfer");
-        if (!file?.size || file.size > 1000000) throw Error("Select a Retina export under 1 MB.");
-        let output;
-        try { output = JSON.parse(await file.text()); }
-        catch { throw Error("This file is not a valid Retina JSON export."); }
-        if (output?.schema !== "enlighten-retina-v1" || typeof output.projectId !== "string" || !output.projectId.trim() ||
-            typeof output.projectName !== "string" || !Array.isArray(output.items) || !output.items.length ||
-            output.items.length > 300 || output.items.some(item => !item || typeof item.sku !== "string" || !item.sku.trim() ||
-              !Number.isSafeInteger(item.count) || item.count < 1 || !["Basic","Linear"].includes(item.kind) ||
-              (item.kind === "Linear" && (!Number.isSafeInteger(item.lengthMm) || item.lengthMm < 1)))) {
-          throw Error("Export a completed Product Technical Table with 1–300 lines from Enlighten.");
-        }
-        const target = required(form,"estimateTarget");
-        const estimate = find(db.estimates || [],target);
-        if (target !== "new" && (!estimate || estimate.payment)) throw Error("Select an estimate that has not been released.");
-        if (estimate?.source?.projectId && estimate.source.projectId !== output.projectId) throw Error("Select an export for the same project.");
-        return () => reviseEstimate(estimate, output);
-      },"Review estimate"),
     "billing-select": key => {
       if (key.endsWith(":invoice")) { invoiceSelection = key; page = 9; }
       else { estimateSelection = key; page = 8; }
