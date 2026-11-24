@@ -443,6 +443,10 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 .billing-toolbar{padding:4px 0 10px;border:0}
 .billing-toolbar .btn,.billing-heading .btn{font-size:.87rem;padding:7px 10px}
 .billing-paper{margin-top:6px;border:1px solid #d4cfc2;background:white}
+.sales-pos-layout>div{min-width:0}
+.sales-pos-check{position:sticky;top:60px;min-width:0}
+.sales-pos-check .line>span{min-width:0;overflow-wrap:anywhere}
+@media(max-width:820px){.sales-pos-layout{display:flex;flex-direction:column}.sales-pos-layout>div,.sales-pos-check{width:100%}.sales-pos-check{position:static;order:-1}}
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
@@ -1867,33 +1871,50 @@ function mountRegister(root) {
     return id;
   }
 
-  let quoteProject = "", quoteLines = [], quoteId = "", savingQuote = false;
+  let quoteProject = "", savingQuote = false;
+  const quoteDrafts = new Map();
   function quoteProjects() {
     return db.salesProjects || db.tables.filter(isProject);
   }
 
   function quoteBuilder() {
-    const project = find(quoteProjects(),quoteProject);
-    const lines = quoteLines.map((item,index) => `<tr><td>${esc(item.name)}<br>${esc(item.sku)}</td>
-      <td>${item.count}</td><td>${money(item.cents / 100)}</td><td>${btn("Remove","quote-remove",String(index),"mini")}</td></tr>`).join("");
+    const projects = quoteProjects();
+    const project = find(projects,quoteProject);
+    const quoteLines = quoteDrafts.get(quoteProject)?.lines || [];
+    const projectCards = projects.map(row => {
+      const selected = row.id === quoteProject;
+      const count = quoteDrafts.get(row.id)?.lines.length || 0;
+      return `<button type="button" class="btn tile floor-tile ${selected ? "active" : count ? "open" : ""}" aria-pressed="${selected}"
+        data-action="quote-select" data-id="${esc(row.id)}">${stationIcon("Other project")}<strong>${esc(row.name)}</strong>
+        ${count ? `<small>${count} product lines</small>` : ""}</button>`;
+    }).join("");
+    const lines = quoteLines.map((item,index) => `<div class="row between line">
+      <span><strong>${esc(item.name)}</strong><small class="line-category">${esc(item.sku)}${item.circuit ? " · " + esc(item.circuit) : ""}</small>
+      ${item.count} × ${money(item.cents / 100)}</span>${btn("Remove","quote-remove",String(index),"mini")}</div>`).join("");
     const cards = legacyProducts.filter(item => item.group === "Housing").map(item => ({...item,
       action:project ? btn(housingRecord(item) ? "Configure" : "Add product","quote-product",item.id,"primary") : ""}));
-    return heading("","Sales POS","Select a project, then configure and price the products.",btn("Back to estimates","page","8") + btn("Enter items manually","estimate-new")) +
-      `<label>Project<select name="quote-project"><option value="">Select a project</option>${quoteProjects().map(row =>
-        `<option value="${esc(row.id)}" ${row.id === quoteProject ? "selected" : ""}>${esc(row.name)}</option>`).join("")}</select></label>` +
-      panel("","Estimate items",(lines ? grid(["Product","Quantity","Unit price",""],lines) : empty("No products added.")) +
-        (project && lines ? `<p>Total · ${money(estimateTotal(quoteLines) / 100)}</p>` + btn("Generate & view estimate","quote-save","","primary") : "")) +
-      panel("","Select Products",productCards(cards,{components:false}));
+    const check = (project ? `<p><strong>${esc(project.name)}</strong></p>` : "") +
+      (lines || empty(project ? "Choose products from the catalogue." : "Select a project to start an estimate.")) +
+      (project && lines ? `<div class="row between total line"><strong>Total</strong><strong>${money(estimateTotal(quoteLines) / 100)}</strong></div>` +
+        btn("Generate & view estimate","quote-save","","primary") : "");
+    return heading("","Sales POS","Select a project, then configure and price the products.",btn("Enter items manually","estimate-new")) +
+      `<div class="split sales-pos-layout"><div>${panel("","Projects",projectCards ? `<div class="tiles">${projectCards}</div>` : empty("No projects yet."),"plan")}
+      ${panel("","Select Products",productCards(cards,{components:false}))}</div>
+      <aside class="sales-pos-check">${panel("","Current Estimate",check)}</aside></div>`;
   }
 
   function addQuoteProduct(item) {
+    const projectId = quoteProject;
     modal("Add " + item.name,`<p>${esc(item.code)}</p>` + amount("quantity","Quantity",1) +
       billingPrice(0,item.price > 0 ? item.price : "") + input("circuit","Circuit number","","text","maxlength='100'"),
       form => {
+        const draft = quoteDrafts.get(projectId) || {id:crypto.randomUUID(),lines:[]};
+        const quoteLines = draft.lines;
         if (quoteLines.length >= 300) throw Error("An estimate supports up to 300 lines.");
         const count = number(read(form,"quantity"),1);
         const cents = number(read(form,"price0"),100);
         quoteLines.push({sku:item.code,name:item.name,count,cents,circuit:read(form,"circuit"),configuration:item.configuration});
+        quoteDrafts.set(projectId,draft);
         render();
       },"Add to estimate");
   }
@@ -2221,7 +2242,17 @@ function mountRegister(root) {
       $("dialog").close();
       actions["production-sheet"](id);
     },
-    "quote-remove": index => { quoteLines.splice(Number(index),1); render(); },
+    "quote-select": id => {
+      if (savingQuote || !find(quoteProjects(),id)) return;
+      quoteProject = id;
+      render();
+      root.querySelector('[data-action="quote-select"][aria-pressed="true"]')?.focus({preventScroll:true});
+    },
+    "quote-remove": index => {
+      if (savingQuote) return;
+      quoteDrafts.get(quoteProject)?.lines.splice(Number(index),1);
+      render();
+    },
     "quote-product": id => {
       if (!find(quoteProjects(),quoteProject)) throw Error("Select a project first.");
       const item = find(legacyProducts,id);
@@ -2231,13 +2262,13 @@ function mountRegister(root) {
     },
     "quote-save": async () => {
       const project = find(quoteProjects(),quoteProject);
-      if (!project || !quoteLines.length) throw Error("Select a project and add products first.");
+      const draft = quoteDrafts.get(quoteProject);
+      if (!project || !draft?.lines.length) throw Error("Select a project and add products first.");
       if (savingQuote) return;
       savingQuote = true;
       try {
-        quoteId ||= crypto.randomUUID();
-        await saveEstimate("estimateSave",{id:quoteId,name:project.name,source:{localProjectId:project.id},items:quoteLines});
-        quoteLines = []; quoteId = "";
+        await saveEstimate("estimateSave",{id:draft.id,name:project.name,source:{localProjectId:project.id},items:draft.lines});
+        quoteDrafts.delete(project.id);
         page = 8;
         render();
       } finally { savingQuote = false; }
@@ -2863,7 +2894,6 @@ function mountRegister(root) {
   
   listen(root, "change", event => {
     const {name,value} = event.target;
-    if (name === "quote-project") { quoteProject = value; render(); return; }
     if (name !== "sales-period" && name !== "sales-project") return;
     if (name === "sales-period") salesPeriod = Number(value);
     else salesProject = value;
@@ -2909,7 +2939,6 @@ function mountRegister(root) {
   
   listen(root, "change", event => {
     const {name,value} = event.target;
-    if (name === "quote-project") { quoteProject = value; render(); return; }
     if (name !== "sales-period" && name !== "sales-project") return;
     if (name === "sales-period") salesPeriod = Number(value);
     else salesProject = value;
