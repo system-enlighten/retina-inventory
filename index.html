@@ -1764,19 +1764,28 @@ function mountRegister(root) {
 
   let housingDatabase = null, housingBomMaster = {}, housingSupplierAliases = null, bomView = "all";
 
-  function housingDatabaseTable() {
+  const normalizeFittingCode = value => String(value ?? "").trim().toUpperCase();
+
+  function housingCodeMatches(value, code) {
+    return normalizeFittingCode(value) === code || String(value ?? "").split("|").some(part => normalizeFittingCode(part) === code);
+  }
+
+  function housingDatabaseTable(code = "") {
     if (!housingDatabase) return empty("Housing Database is unavailable. Reload the production register.");
     const {headers,rows} = housingDatabase;
     const shown = rows.filter(row => {
+      if (code) return housingCodeMatches(row[5],code);
       const serial = Number(row[0]);
       if (bomView === "linear") return serial >= 200 && serial <= 400;
       if (bomView === "application") return serial > 400;
       return true;
     });
+    if (code && !shown.length) return empty("No lights in the Database match this fitting code.");
+    const linear = code ? shown.every(row => Number(row[0]) >= 200 && Number(row[0]) <= 400) : bomView === "linear";
     const sourceWidths = [56,120,108,85,177,112,145,68,142,100,58,58,156,88,85,125,155,95,128,60,87,72,115];
     const visibleColumns = headers.map((_,index) => index).filter(index =>
       ![2,16,17,22].includes(index) &&
-      !(bomView === "linear" ? [13,14,15] : [19,20,21]).includes(index));
+      !(linear ? [13,14,15] : [19,20,21]).includes(index));
     const widths = visibleColumns.map(index => sourceWidths[index]);
     const columns = widths.map(width => `<col style="width:${width}px">`).join("");
     const header = visibleColumns.map(index => `<th scope="col">${esc(headers[index])}</th>`).join("") + '<th scope="col">Actions</th>';
@@ -1787,10 +1796,12 @@ function mountRegister(root) {
       return `<${tag}${column === 0 ? ' scope="row"' : ''}${style}>${thumbnail
         ? `<img loading="lazy" decoding="async" src="${esc(thumbnail)}" alt="${esc(row[4] || "Housing " + row[0])}">`
         : column === 0 ? `<button type="button" class="housing-row-link" data-action="housing-bom" data-id="${esc(row[0])}"
-            aria-label="Open BOM for housing ${esc(row[0])}">${esc(row[0])}</button>` : esc(row[column])}</${tag}>`;
+            aria-label="Open BOM for housing ${esc(row[0])}">${esc(row[0])}</button>` :
+          column === 5 && row[column] && !code ? `<button type="button" class="housing-row-link" data-action="matrix-code"
+            data-id="${esc(row[column])}">${esc(row[column])}</button>` : esc(row[column])}</${tag}>`;
     }).join("")}<td class="housing-row-actions">${btn("Configure","housing-configure",row[0],"mini")}</td></tr>`).join("");
-    const title = bomView === "linear" ? "Linear Database" : bomView === "application" ? "Application-Specific" : "Housing Database";
-    return `<div class="housing-database-scroll" tabindex="0" role="region" aria-label="${title}">
+    const title = code ? "Matching lights for " + code : bomView === "linear" ? "Linear Database" : bomView === "application" ? "Application-Specific" : "Housing Database";
+    return `<div class="housing-database-scroll" tabindex="0" role="region" aria-label="${esc(title)}">
       <table class="housing-database-grid" style="width:${sum(widths)+150}px">
         <colgroup>${columns}<col style="width:150px"></colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody>
       </table></div>`;
@@ -1876,7 +1887,12 @@ function mountRegister(root) {
   function fittingMatrix() {
     const { rows, widths, heights } = enlightenMatrix;
     const scaled = value => Math.round(value * 0.86);
-    const knownCodes = new Set(NOMENCLATURE_MASTER.map(item => item.code));
+    const knownCodes = new Set(NOMENCLATURE_MASTER.map(item => normalizeFittingCode(item.code)));
+    for (const row of housingDatabase?.rows || []) {
+      for (const part of String(row[5] || "").split("|")) {
+        if (part.trim()) knownCodes.add(normalizeFittingCode(part));
+      }
+    }
     const cols = widths.map(width => `<col style="width:${scaled(width)}px">`).join("");
     const body = rows.map((cells, rowIndex) => {
       const height = scaled(heights[rowIndex]);
@@ -1887,7 +1903,7 @@ function mountRegister(root) {
         const image = enlightenImages[cell.image];
         const label = esc(cell.text);
         const color = /^#[0-9a-f]{6}$/i.test(cell.background || "") ? cell.background : "";
-        const text = knownCodes.has(cell.text)
+        const text = knownCodes.has(normalizeFittingCode(cell.text))
           ? `<button type="button" class="matrix-code" data-action="matrix-code" data-id="${label}">${label}</button>`
           : label;
         return `<${tag} rowspan="${rowspan}" colspan="${colspan}" style="background-color:${color};font-weight:${cell.bold ? "700" : "400"}">
@@ -3557,12 +3573,14 @@ function mountRegister(root) {
       render();
       $("screen").querySelector('[data-action="nomen-view"][aria-pressed="true"]')?.focus();
     },
-    "matrix-code": code => {
-      nomenFilter = { cat: "", height: "", query: code, status: "" };
-      nomenView = "mappings";
-      render();
-      $("nomen-search").focus();
+    "matrix-code": async value => {
+      const code = normalizeFittingCode(value);
+      if (!code) return;
+      if (!housingDatabase) await loadProduction();
+      modal("Matching lights · " + code, housingDatabaseTable(code));
+      $("dialog").classList.add("housing-config-dialog");
     },
+
     "nomen-cat": id => { nomenFilter.cat = id; render(); },
 
     "nomen-clear": () => { nomenFilter = { cat: "", height: "", query: "", status: "" }; render(); },
