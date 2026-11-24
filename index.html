@@ -447,8 +447,15 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 .sales-pos-check{position:sticky;top:60px;min-width:0}
 .sales-pos-check .line>span{min-width:0;overflow-wrap:anywhere}
 @media(max-width:820px){.sales-pos-layout{display:flex;flex-direction:column}.sales-pos-layout>div,.sales-pos-check{width:100%}.sales-pos-check{position:static;order:-1}}
-.housing-card-spec{display:flex;flex-wrap:wrap;gap:5px 10px;margin:5px 0;color:var(--ink);font-size:12px;font-weight:700;line-height:1.4}
-.housing-card-spec>span{white-space:nowrap}
+.housing-card-spec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);margin:9px 0 5px;border:1px solid #ccd5d1;background:var(--white);color:var(--ink);font-size:12px;line-height:1.4}
+.housing-card-spec .spec-cell{display:flex;flex-wrap:wrap;align-content:center;gap:2px 6px;min-width:0;min-height:34px;padding:5px 7px;overflow-wrap:anywhere}
+.housing-card-spec .spec-cell:nth-child(even){border-left:1px solid #ccd5d1}
+.housing-card-spec .spec-cell:nth-child(n+3){border-top:1px solid #ccd5d1}
+.housing-card-spec .spec-code{background:#e5eeeb;font-family:var(--mono, monospace);font-weight:800}
+.housing-card-spec .spec-cell strong{font-weight:750}
+.housing-card-spec .spec-dimensions span[aria-hidden],.housing-card-spec .spec-angles strong{color:#8f422c}
+.housing-card-spec .spec-secondary{color:var(--muted);font-weight:500}
+.housing-card-spec .spec-dimensions>span,.housing-card-spec .spec-angles>strong{white-space:nowrap}
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
@@ -1059,10 +1066,17 @@ function mountRegister(root) {
       diameter && `<span aria-label="Diameter ${esc(diameter)} millimetres" title="Diameter"><span aria-hidden="true">⌀</span> ${esc(diameter)} mm</span>`,
       opening && `<span aria-label="Opening ${esc(opening)} millimetres" title="Opening"><span aria-hidden="true">⊡</span> ${esc(opening.replace(/[xX]/g,"×"))} mm</span>`
     ];
-    const values = [catalogue.fam || spec[0] ? `<span>${esc(catalogue.fam || spec[0])}</span>` : "",
-      ...dimensions,[watts ? watts + " W" : "",flux > 0 ? flux + " lm" : ""].filter(Boolean).join(" / "),
-      beams.size ? `<span aria-label="Beam angles ${esc([...beams].join(", "))}">${esc([...beams].join(" · "))}</span>` : ""].filter(Boolean);
-    return values.length ? `<div class="housing-card-spec">${values.map(value => `<span>${value}</span>`).join("")}</div>` : "";
+    const code = catalogue.fam || spec[0];
+    const hasFlux = Number.isFinite(flux) && flux > 0;
+    const placeholder = '<span class="spec-secondary">—</span>';
+    const output = [watts && `<strong>${watts} W</strong>`,hasFlux && `<span class="spec-secondary">${watts ? "/ " : ""}${flux} lm</span>`].filter(Boolean).join("");
+    if (!code && !dimensions.some(Boolean) && !output && !beams.size) return "";
+    return `<div class="housing-card-spec">
+      <div class="spec-cell spec-code" role="group" aria-label="Model code">${code ? esc(code) : placeholder}</div>
+      <div class="spec-cell spec-dimensions" role="group" aria-label="Diameter and opening">${dimensions.filter(Boolean).join("") || placeholder}</div>
+      <div class="spec-cell" role="group" aria-label="Maximum LED power and lumen output">${output || placeholder}</div>
+      <div class="spec-cell spec-angles" role="group" aria-label="Available beam angles">${[...beams].map(angle => `<strong>${esc(angle)}</strong>`).join("") || placeholder}</div>
+    </div>`;
   }
 
   function playcard(item, index) {
