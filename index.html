@@ -459,6 +459,7 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 .housing-card-spec .spec-angles strong{color:#28577d}
 .housing-card-spec .spec-secondary{color:var(--muted);font-weight:500}
 .housing-card-spec .spec-dimensions>span,.housing-card-spec .spec-angles>strong{white-space:nowrap}
+.catalogue-view{margin:10px 0}.catalogue-view [aria-pressed="true"]{background:var(--ink);color:var(--white)}
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
@@ -981,15 +982,20 @@ function mountRegister(root) {
 
   let legacyProducts = mergeLegacyCatalogue(null);
 
+  function inventoryHousingAction(id, available) {
+    return available > 0 ? btn("Configure","inventory-configure",id)
+      : '<button type="button" class="btn" disabled>Out of stock</button>';
+  }
+
   function legacyCards(existing, inventoryView = false, ordering = false, canOrder = true) {
     const registered = new Set(db.ingredients.map(row => String(row.id).trim().toUpperCase()));
     const shown = new Set(existing.filter(row => !row.configuration).map(row => `${row.group}|${String(row.code || "").trim().toUpperCase()}`));
     return legacyProducts.filter(item => !item.aliases.some(sku => shown.has(`${item.group}|${sku}`)))
       .map(item => {
         const imported = item.aliases.some(sku => registered.has(sku));
-        const action = inventoryView ? (!imported && canWrite ? btn("+ Add","import-legacy-component",item.id) : "")
+        const action = inventoryView ? (item.group === "Housing" ? inventoryHousingAction(item.id,item.balance) : !imported && canWrite ? btn("+ Add","import-legacy-component",item.id) : "")
           : canWrite && (!ordering || canOrder) ? btn("+ Add",ordering ? "legacy-order" : "legacy-bom",item.id) : "";
-        return {...item, status:inventoryView && Number.isFinite(item.balance) ? `Old stock · ${item.balance}` : "", action};
+        return {...item, hideStockBadge:inventoryView && item.group === "Housing", status:inventoryView && Number.isFinite(item.balance) ? `Old stock · ${item.balance}` : "", action};
       });
   }
   const division = group => /driver|control gear/i.test(group) ? "Driver"
@@ -1001,7 +1007,7 @@ function mountRegister(root) {
       && (group !== "Other" || items.some(item => item.group === group)));
     if (!categories.includes(state.category) && state.category) state.category = "";
     const buttons = ["", ...categories].map(group => {
-      const count = group ? items.filter(item => item.group === group).length : items.length;
+      const count = group ? items.filter(item => item.group === group).length : items.filter(item => item.group !== "LED").length;
       return `<button type="button" class="btn category-choice" data-action="catalog-category" data-id="${esc(group)}"
         aria-pressed="${group === state.category}">${catalogueIcon(group)}<span>${esc(group || "All products")}</span><small>${count}</small></button>`;
     }).join("");
@@ -1010,6 +1016,9 @@ function mountRegister(root) {
       <label>Search products<input id="catalog-query" type="search" placeholder="Search by name, SKU or specification" value="${esc(state.query)}"></label>
       <div class="draft red">Browse by category</div>
       <div class="product-division" role="group" aria-label="Product divisions">${buttons}</div>
+      ${page === 1 ? `<div class="row catalogue-view" role="group" aria-label="Database view">
+        ${["Cards","Table"].map(view => `<button type="button" class="btn mini" data-action="catalog-view" data-id="${view}"
+          aria-pressed="${(state.view || "Cards") === view}">${view}</button>`).join("")}</div>` : ""}
       <div id="catalog-results">${catalogueSections(state)}</div>
     </div>`;
   }
@@ -1020,8 +1029,8 @@ function mountRegister(root) {
 
   function catalogueSections(state) {
     const query = state.query.trim().toLowerCase();
-    const groups = state.category ? [state.category] : divisions;
-    const pageSize = state.category ? 24 : 6;
+    const groups = state.category ? [state.category] : divisions.filter(group => group !== "LED");
+    const pageSize = state.view === "Table" || state.category ? 24 : 6;
     const matching = (state.items || []).filter(item =>
       [item.name,item.code,item.spec,item.group].join(" ").toLowerCase().includes(query));
     let visible = 0;
@@ -1034,7 +1043,7 @@ function mountRegister(root) {
       const subset = items.slice(start,start + pageSize);
       return `<section class="catalogue-section">
         <div class="catalogue-section-head">${catalogueIcon(group)}<h3>${esc(group)}</h3><span class="draft">${items.length} items</span></div>
-        <div class="product-grid">${subset.map(item => playcard(item, visible++)).join("")}</div>
+        ${state.view === "Table" ? catalogueDatabaseTable(group,subset) : `<div class="product-grid">${subset.map(item => playcard(item, visible++)).join("")}</div>`}
         ${last > 0 ? `<div class="catalogue-pagination">
           <button class="btn mini" type="button" data-action="catalog-page" data-id="${group}:${current-1}" ${current === 0 ? "disabled" : ""}>Previous</button>
           <span>${start+1}–${start+subset.length} of ${items.length}</span>
@@ -1043,6 +1052,20 @@ function mountRegister(root) {
       </section>`;
     }).join("");
     return sections || '<p class="muted">No products match this view.</p>';
+  }
+
+  function catalogueDatabaseTable(group, items) {
+    const housing = group === "Housing";
+    const headings = housing ? ["SKU","Product","Model","Cutout","Wattage","Lumen output","Beam angles"] : ["SKU","Product","Specifications"];
+    return grid([...headings,"Price","Stock","Actions"],items.map(item => {
+      const card = housing && housingCardCatalogue(item);
+      const spec = card && housingRecord(card)?.spec;
+      const detail = housing ? [card?.fam || spec?.[0],
+        (card?.dim || spec?.[4] || "").match(/(?:Opening|Cut[ -]?out)\s*:[^\n]*/i)?.[0],
+        card?.watts || spec?.[5],card?.lumens,card?.beam || spec?.[1]] : [item.spec];
+      const cells = [item.code,item.name,...detail,Number.isFinite(item.price) ? priced(item.price) : "Price on request",item.status];
+      return `<tr>${cells.map(value => `<td>${esc(value || "—")}</td>`).join("")}<td>${item.action || ""}</td></tr>`;
+    }).join(""));
   }
 
   function housingCardCatalogue(item) {
@@ -1093,7 +1116,7 @@ function mountRegister(root) {
         <img src="${esc(image)}" alt="${esc(item.name)}" loading="${index < 12 ? "eager" : "lazy"}" ${index < 4 ? 'fetchpriority="high"' : ""} decoding="async" referrerpolicy="no-referrer"></div>` : ""}
       <div class="playcard-copy"><h4>${["component-details","legacy-details","product-details"].includes(item.details) ? `<button type="button" class="playcard-title" data-action="${item.details}" data-id="${esc(item.id)}">${productName}</button>` : productName}</h4>${housingCardSpecs(housing,item.code) || `<p>${esc(item.spec)}</p>`}
         ${item.variant ? `<small>${esc(item.variant)}</small>` : ""}
-        ${item.status ? `<span class="tag ${item.warn ? "warn" : ""}">${esc(item.status)}</span>` : ""}
+        ${item.status && !item.hideStockBadge ? `<span class="tag ${item.warn ? "warn" : ""}">${esc(item.status)}</span>` : ""}
       </div>
       <div class="playcard-footer"><strong>${Number.isFinite(item.price) ? priced(item.price) : "Price on request"}</strong>${item.action}</div>
     </article>`;
@@ -1356,7 +1379,8 @@ function mountRegister(root) {
       return { id:i.id, name:i.name, code:i.id, group, image:i.image || housingModel?.image,
         status:available ? `${available} ${i.unit} in stock` : "Out of stock", warn:available <= i.min,
         spec:`${i.group || group} · Reorder at ${i.min} ${i.unit} · Lead time ${i.life} days`,
-        details:"component-details", action:btn("Receive stock","receive",i.id) };
+        details:"component-details", hideStockBadge:group === "Housing",
+        action:group === "Housing" ? inventoryHousingAction(i.id,available) : btn("Receive stock","receive",i.id) };
     });
 
     const batches = lists[filter].filter(b => !storageFilter || storageKey(b) === storageFilter)
@@ -1750,13 +1774,13 @@ function mountRegister(root) {
     });
   }
 
-  function configureHousing(item, tableId, onQuote) {
+  function configureHousing(item, tableId, onQuote, inventoryView = false) {
     const housing = housingRecord(item);
     const finished = housing.finished && !housing.options.length;
     const candidates = finished ? [[item.code, "", "", ""]] : housing.options;
     const choices = [...new Set(candidates.map(row => row[1]))];
     const variants = [...new Set([...Object.keys(housing.variants), ...choices])];
-    let variant = onQuote && variants.length && !finished ? null : (choices[0] ?? variants[0] ?? "");
+    let variant = (onQuote || inventoryView) && variants.length && !finished ? null : (choices[0] ?? variants[0] ?? "");
     let led = "", driver = "";
     const variantRows = variants.map(code => [code, [housing.variants[code] || []]]);
     const variantTable = variants.length && !finished ? configurationTable(
@@ -1769,6 +1793,8 @@ function mountRegister(root) {
       <p><b>${esc(item.code)}</b> · ${esc(housing.spec.join(" · ") || item.spec)}</p>
       ${variantTable}<div id="housing-led"></div><div id="housing-driver"></div>
       <div id="housing-selection" aria-live="polite"></div>
+      ${inventoryView && canWrite && !db.ingredients.some(row => item.aliases.includes(String(row.id).trim().toUpperCase()))
+        ? btn("Add housing to stockroom","inventory-register",item.id) : ""}
       <details open><summary><strong>Housing BOM · source reference</strong></summary>
       ${sourceTree.length ? bomTree(sourceTree) : empty("No assembly BOM was found in the sheet for this housing.")}
       ${housing.tree.length ? empty("Assembly relationships follow the sheet’s stages. Verify inconsistent SKUs and quantities before approval.") : ""}
@@ -2492,6 +2518,26 @@ function mountRegister(root) {
     filter: f => { filter = f; render(); },
     storage: key => { storageFilter = (storageFilter === key ? "" : key); render(); },
     capacity: key => { capacityView = key; render(); },
+    "catalog-view": view => {
+      if (page !== 1 || !["Cards","Table"].includes(view)) return;
+      catalogState[page].view = view;
+      catalogState[page].offset = {};
+      applyCatalogFilter();
+      root.querySelectorAll('[data-action="catalog-view"]').forEach(button =>
+        button.setAttribute("aria-pressed",String(button.dataset.id === view)));
+    },
+    "inventory-configure": id => {
+      const item = find(legacyProducts,id) || housingCardCatalogue({id,code:id});
+      if (housingRecord(item)) return configureHousing(item,null,null,true);
+      if (!item) return;
+      modal(item.name,empty("No housing configuration is recorded for this SKU.") +
+        (canWrite && !db.ingredients.some(row => item.aliases.includes(String(row.id).trim().toUpperCase()))
+          ? btn("Add housing to stockroom","inventory-register",item.id) : ""));
+    },
+    "inventory-register": id => {
+      $("dialog").close();
+      actions["import-legacy-component"](id);
+    },
     "catalog-category": id => {
       catalogState[page].category = id;
       catalogState[page].offset = {};
