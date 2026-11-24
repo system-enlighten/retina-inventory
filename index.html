@@ -451,9 +451,12 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 .housing-card-spec .spec-cell{display:flex;flex-wrap:wrap;align-content:center;gap:2px 6px;min-width:0;min-height:34px;padding:5px 7px;overflow-wrap:anywhere}
 .housing-card-spec .spec-cell:nth-child(even){border-left:1px solid #ccd5d1}
 .housing-card-spec .spec-cell:nth-child(n+3){border-top:1px solid #ccd5d1}
-.housing-card-spec .spec-code{background:#e5eeeb;font-family:var(--mono, monospace);font-weight:800}
+.housing-card-spec .spec-cutout-icon{font-size:2em;line-height:1;vertical-align:middle}
+.playcard .playcard-model{color:inherit}
+.housing-card-spec .spec-sku{color:var(--rust);font-weight:800;background:#e5eeeb}
 .housing-card-spec .spec-cell strong{font-weight:750}
-.housing-card-spec .spec-dimensions span[aria-hidden],.housing-card-spec .spec-angles strong{color:#8f422c}
+.housing-card-spec .spec-dimensions span[aria-hidden]{color:#8f422c}
+.housing-card-spec .spec-angles strong{color:#28577d}
 .housing-card-spec .spec-secondary{color:var(--muted);font-weight:500}
 .housing-card-spec .spec-dimensions>span,.housing-card-spec .spec-angles>strong{white-space:nowrap}
 </style>
@@ -954,7 +957,9 @@ function mountRegister(root) {
         const image = Object.entries(row).find(([heading]) => heading.replace(/[\s_-]/g, "").toLowerCase() === "imageurl")?.[1];
         rows.set(n, {...rows.get(n), ...details, n,
           ...(row["Product Name"] ? {[group === "Driver" ? "code" : "name"]:row["Product Name"]} : {}),
-          ...(image ? {img:image} : {}), price:row["Selling Price"] || row["Unit Price"] || row.Price || details.price, sku});
+          ...(image ? {img:image} : {}), ...(row["Lumen Output"] || row["Lumens"] || row["Luminous Flux"] ? {lumens:row["Lumen Output"] || row["Lumens"] || row["Luminous Flux"]} : {}),
+          ...(row["Cutoff Angle"] || row["Cut-off Angle"] ? {cutoff:row["Cutoff Angle"] || row["Cut-off Angle"]} : {}),
+          price:row["Selling Price"] || row["Unit Price"] || row.Price || details.price, sku});
       }
       return Array.from(rows.values(), row => {
         const defaults = {Housing:`D.${row.n}`, LED:`D0.${row.n}.0`, Driver:`D0.0.${row.n}`};
@@ -967,7 +972,7 @@ function mountRegister(root) {
         const parsedPrice = String(rawPrice ?? "").trim().replace(/[₹, ]/g, "");
         const price = /^\d+(?:\.\d{1,2})?$/.test(parsedPrice) ? Number(parsedPrice) : null;
         const fields = [row.fam,row.beam,row.mount,row.ip,row.heat,row.dim,row.kind,row.w,row.volt,row.cct,row.make,row.mode,row.load,row.typo,row.cur];
-        return {id:`${group}-${row.n}`, code:row.sku || defaults[group], aliases, group, image, balance, price, fam:row.fam || "", beam:row.beam, dim:row.dim, watts:row.heat, lumens:row.lumens,
+        return {id:`${group}-${row.n}`, code:row.sku || defaults[group], aliases, group, image, balance, price, fam:row.fam || "", beam:row.beam, dim:row.dim, watts:row.heat, lumens:row.lumens || row["Lumen Output"] || product?.["Lumen Output"] || product?.["Lumens"] || product?.["Luminous Flux"], cutoff:row.cutoff || row.cutoffAngle || row["Cutoff Angle"] || product?.["Cutoff Angle"] || product?.["Cut-off Angle"],
           name:String(row.name || row.code || product?.["Product Name"] || `${group} ${row.n}`),
           spec:fields.filter(Boolean).join(" · "), details:"legacy-details"};
       });
@@ -1040,15 +1045,17 @@ function mountRegister(root) {
     return sections || '<p class="muted">No products match this view.</p>';
   }
 
-  function housingCardSpecs(item) {
-    const catalogue = item.id.startsWith("Housing-") ? item : legacyProducts.find(row =>
+  function housingCardCatalogue(item) {
+    return item.id.startsWith("Housing-") ? item : legacyProducts.find(row =>
       row.group === "Housing" && row.aliases.includes(String(item.code).toUpperCase()));
+  }
+
+  function housingCardSpecs(catalogue, sku) {
     if (!catalogue) return "";
     const housing = housingRecord(catalogue);
     const spec = housing?.spec || [];
     const dim = catalogue.dim || spec[4] || "";
-    const diameter = String(dim).match(/(?:Diameter|Dia|Ø)\s*[:.]?\s*(\d+(?:\.\d+)?)/i)?.[1];
-    const opening = String(dim).match(/Opening\s*:\s*(\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?)?)/i)?.[1];
+    const opening = String(dim).match(/(?:Opening|Cut[ -]?out)\s*:\s*(?:Ø\s*)?(\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?)?)/i)?.[1];
     const beams = new Set();
     for (const angle of [catalogue.beam,spec[1],...Object.values(housing?.variants || {}).map(row => row[0])]) {
       for (const match of String(angle || "").matchAll(/(\d+(?:\.\d+)?)(?:\s*°?\s*[-–]\s*(\d+(?:\.\d+)?))?\s*°?/g)) {
@@ -1062,31 +1069,29 @@ function mountRegister(root) {
     const compatiblePower = leds.flatMap(row => power(row[2])).filter(watts => !housingMax || watts <= housingMax);
     const watts = Math.max(0,...compatiblePower) || housingMax;
     const flux = Number(String(catalogue.lumens || "").replace(/[,\s]/g,"").replace(/(?:lm|lumens?)$/i,""));
-    const dimensions = [
-      diameter && `<span aria-label="Diameter ${esc(diameter)} millimetres" title="Diameter"><span aria-hidden="true">⌀</span> ${esc(diameter)} mm</span>`,
-      opening && `<span aria-label="Opening ${esc(opening)} millimetres" title="Opening"><span aria-hidden="true">⊡</span> ${esc(opening.replace(/[xX]/g,"×"))} mm</span>`
-    ];
-    const code = catalogue.fam || spec[0];
-    const hasFlux = Number.isFinite(flux) && flux > 0;
     const placeholder = '<span class="spec-secondary">—</span>';
-    const output = [watts && `<strong>${watts} W</strong>`,hasFlux && `<span class="spec-secondary">${watts ? "/ " : ""}${flux} lm</span>`].filter(Boolean).join("");
-    if (!code && !dimensions.some(Boolean) && !output && !beams.size) return "";
+    const output = [watts && `<strong>${watts} W</strong>`,Number.isFinite(flux) && flux > 0 &&
+      `<span class="spec-secondary">${watts ? "/ " : ""}${flux.toLocaleString("en-IN")} lm</span>`].filter(Boolean).join("");
     return `<div class="housing-card-spec">
-      <div class="spec-cell spec-code" role="group" aria-label="Model code">${code ? esc(code) : placeholder}</div>
-      <div class="spec-cell spec-dimensions" role="group" aria-label="Diameter and opening">${dimensions.filter(Boolean).join("") || placeholder}</div>
+      <div class="spec-cell spec-sku" role="group" aria-label="Product SKU">${esc(sku)}</div>
+      <div class="spec-cell spec-dimensions" role="group" aria-label="Cutout">${opening ?
+        `<span><span class="spec-cutout-icon" aria-hidden="true">⌀</span> ${esc(opening.replace(/[xX]/g,"×"))} mm</span>` : placeholder}</div>
       <div class="spec-cell" role="group" aria-label="Maximum LED power and lumen output">${output || placeholder}</div>
       <div class="spec-cell spec-angles" role="group" aria-label="Available beam angles">${[...beams].map(angle => `<strong>${esc(angle)}</strong>`).join("") || placeholder}</div>
     </div>`;
   }
 
   function playcard(item, index) {
+    const housing = item.group === "Housing" ? housingCardCatalogue(item) : null;
+    const model = housing && (housing.fam || housingRecord(housing)?.spec[0]);
+    const productName = esc(item.name);
     const image = item.image?.startsWith("./product_guide_assets/")
       ? "/production/" + item.image.slice(2) : item.image;
     return `<article class="playcard">
-      <div class="playcard-header draft">${catalogueIcon(item.group)}<span>${esc(item.group)}</span><span class="playcard-code">${esc(item.code)}</span></div>
+      <div class="playcard-header draft">${catalogueIcon(item.group)}<span>${esc(item.group)}</span><span class="playcard-code${model ? " playcard-model" : ""}">${esc(model || item.code)}</span></div>
       ${image ? `<div class="playcard-image"><span class="playcard-placeholder" aria-hidden="true">${catalogueIcon(item.group)}</span>
         <img src="${esc(image)}" alt="${esc(item.name)}" loading="${index < 12 ? "eager" : "lazy"}" ${index < 4 ? 'fetchpriority="high"' : ""} decoding="async" referrerpolicy="no-referrer"></div>` : ""}
-      <div class="playcard-copy"><h4>${["component-details","legacy-details","product-details"].includes(item.details) ? `<button type="button" class="playcard-title" data-action="${item.details}" data-id="${esc(item.id)}">${esc(item.name)}</button>` : esc(item.name)}</h4>${(item.group === "Housing" && housingCardSpecs(item)) || `<p>${esc(item.spec)}</p>`}
+      <div class="playcard-copy"><h4>${["component-details","legacy-details","product-details"].includes(item.details) ? `<button type="button" class="playcard-title" data-action="${item.details}" data-id="${esc(item.id)}">${productName}</button>` : productName}</h4>${housingCardSpecs(housing,item.code) || `<p>${esc(item.spec)}</p>`}
         ${item.variant ? `<small>${esc(item.variant)}</small>` : ""}
         ${item.status ? `<span class="tag ${item.warn ? "warn" : ""}">${esc(item.status)}</span>` : ""}
       </div>

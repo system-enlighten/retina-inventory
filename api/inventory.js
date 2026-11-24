@@ -126,7 +126,7 @@ export default async function handler(req,res) {
         readTab(sheets,spreadsheetId,'Products'),canReadStock ? readTab(sheets,spreadsheetId,'Stock') : [],
         ...CATALOG_TABS.map(async name => { try { return await readTab(sheets,spreadsheetId,name); } catch(e) { if(e?.code===400 || e?.response?.status===400) return []; throw e; } })
       ]);
-      const fields=['SKU','Product Name','Selling Price','Unit Price','Price','Number','S#','S #','S.No','S No','Status'];
+      const fields=['SKU','Product Name','Selling Price','Unit Price','Price','Number','S#','S #','S.No','S No','Status','Lumen Output','Lumens','Luminous Flux','Cutoff Angle','Cut-off Angle'];
       const publicProduct=row=>Object.fromEntries(fields.filter(field=>Object.hasOwn(row,field)).map(field=>[field,row[field]]));
       return res.json({products:canReadStock ? products : products.map(publicProduct),stock,catalogs:Object.fromEntries(CATALOG_TABS.map((name,i)=>[name,canReadStock ? catalogs[i] : catalogs[i].map(publicProduct)]))});
     }
