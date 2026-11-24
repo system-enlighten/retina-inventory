@@ -470,10 +470,16 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
   <button type="button" data-action="logout-production">Sign out / switch account</button>
 </div>
 <div class="shell">
+<aside class="register-sidebar app-chrome" aria-label="Retina workspace">
+  <div class="mast">
+    <div><div class="wordmark">RETINA</div><div class="draft subtitle">Orders · Production · Stockroom</div></div>
+    <button class="btn section-toggle" id="section-toggle" type="button" aria-controls="nav" aria-expanded="false" data-action="toggle-sections">Menu</button>
+  </div>
+  <nav class="tabs" id="nav" aria-label="Register sections"></nav>
+  <button class="btn department-switch" type="button" data-action="department-directory">Departments</button>
+</aside>
 <header class="app-chrome">
 <div class="meta"><span id="department-label">Retina / Manufacturing Operations</span><span id="header-date"></span></div>
-<div class="mast"><div><div class="wordmark">RETINA</div><div class="draft subtitle">Orders · Production · Stockroom</div></div><button class="btn department-switch" type="button" data-action="department-directory">Departments</button></div>
-<nav class="tabs" id="nav" aria-label="Register sections"></nav>
 <p id="notice" class="notice"></p>
 </header>
 <div id="status" role="status"></div>
@@ -1686,6 +1692,7 @@ function mountRegister(root) {
     $("footer-sheet").textContent = directoryOpen ? "Departments" : department.name;
 
     $("nav").hidden = directoryOpen || !department?.pages.length;
+    $("section-toggle").hidden = $("nav").hidden;
     $("nav").innerHTML = (department?.pages || []).map(i =>
       `<button type="button" class="tab" data-action="page" data-id="${i}" ${i === page ? 'aria-current="page"' : ""}>
         ${esc(pages[i])}</button>`).join("");
@@ -2484,7 +2491,12 @@ function mountRegister(root) {
       root.classList.add("document-print");
       window.print();
     },
+    "toggle-sections": () => {
+      const toggle = $("section-toggle");
+      toggle.setAttribute("aria-expanded", String(toggle.getAttribute("aria-expanded") !== "true"));
+    },
     "department-directory": () => {
+      $("section-toggle").setAttribute("aria-expanded", "false");
       directoryOpen = !department || !directoryOpen;
       if (directoryOpen) note("");
       render();
@@ -2511,7 +2523,12 @@ function mountRegister(root) {
         selected = db.tables.find(row => !isProject(row))?.id;
       }
       if (!loaded && next !== 3 && next !== 4) loadProduction().catch(error => note(error.message));
+      const toggle = $("section-toggle");
+      const compact = toggle.getClientRects().length > 0;
+      toggle.setAttribute("aria-expanded", "false");
       render();
+      (compact ? toggle : $("nav").querySelector('[aria-current="page"]'))?.focus({preventScroll:true});
+      window.scrollTo(0, 0);
     },
     select: id => { selected = id; render(); },
     close: () => { $("dialog").close(); },
@@ -3739,6 +3756,42 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
   :where(.retina-inventory-pos) .tab{padding:8px;font-size:10px}
   :where(.retina-inventory-pos) .split{grid-template-columns:1fr}
 }
+/* Full-width register with persistent section navigation */
+@media screen {
+  .retina-inventory-pos{--account-bar-height:40px;--sidebar-width:224px}
+  .retina-account-bar{height:var(--account-bar-height)}
+  .retina-inventory-pos:not(.directory-open)>.shell{
+    width:auto;min-height:calc(100dvh - var(--account-bar-height));margin:0;
+    padding:18px clamp(14px,2.2vw,36px) 0;background:var(--paper);
+    border:0;box-shadow:none
+  }
+  .register-sidebar{background:var(--paper)}
+  .register-sidebar .wordmark{font-size:38px}
+  .register-sidebar .mast .subtitle{font-size:9px;letter-spacing:.08em}
+  .register-sidebar .tab{
+    width:100%;border-right:0;border-bottom:1px solid var(--soft);
+    padding:12px;white-space:normal;text-align:left
+  }
+  .register-sidebar .tab:not([aria-current]):hover{background:var(--blue)}
+  .register-sidebar .tab:focus-visible{outline-offset:-3px}
+  .register-sidebar .department-switch{margin:16px 0 0}
+}
+@media screen and (min-width:761px){
+  .retina-inventory-pos:not(.directory-open)>.shell{margin-left:var(--sidebar-width)}
+  .register-sidebar{
+    position:fixed;z-index:10;top:var(--account-bar-height);bottom:0;left:0;
+    width:var(--sidebar-width);overflow:auto;padding:0 14px 16px;border-right:1px solid var(--rule)
+  }
+  .register-sidebar .section-toggle{display:none}
+}
+@media screen and (max-width:760px){
+  .register-sidebar{margin-bottom:16px;border-bottom:1px solid var(--rule);padding-bottom:10px}
+  .register-sidebar .mast{padding:0 0 10px}
+  .register-sidebar .mast:has(.section-toggle[aria-expanded="false"]) + .tabs{display:none}
+  .register-sidebar .wordmark{font-size:32px}
+  .register-sidebar .department-switch{margin-top:10px}
+}
+
 `;
 document.getElementById('app-styles').textContent = styles;
 mountRegister(document.getElementById('app'));
