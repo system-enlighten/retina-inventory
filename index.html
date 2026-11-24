@@ -420,16 +420,24 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
   text-align: center;
 }
 
-.billing-workspace{display:grid;grid-template-columns:minmax(185px,24%) minmax(0,1fr);border:1px solid var(--line);background:#fff}
-.billing-workspace aside{padding:12px;border-right:1px solid #d4cfc2}
-.billing-workspace aside .btn{width:100%;text-align:left;margin-bottom:6px}
-.billing-detail{min-width:0;background:#f7f5ef}
+ .billing-workspace{border:1px solid var(--line);background:white}
 .billing-detail header{padding:14px;background:white}
 .billing-detail header small{display:block}
 .billing-toolbar{padding:8px 12px;border-block-end:1px solid #d4cfc2}
-.billing-toolbar:empty{display:none}
-#billing-preview{display:block;width:100%;height:70vh;min-height:380px;border:0;background:white}
-@media(max-width:700px){.billing-workspace{grid-template-columns:1fr}.billing-workspace aside{border-right:0}}
+.billing-toolbar,.billing-tabs{display:flex;flex-wrap:nowrap;gap:8px;overflow-x:auto}
+.billing-toolbar .btn,.billing-tabs .btn{flex:none;white-space:nowrap}
+.billing-tabs{background:#eeece4;border-top:1px solid #d4cfc2;padding:6px 10px 0}
+.billing-tabs .btn{border-radius:5px 5px 0 0;border-bottom:0}
+.billing-tabs .btn[aria-current="true"]{box-shadow:inset 0 -3px #538b7f}
+#billing-preview{display:block;width:100%;height:65vh;min-height:360px;border:0;background:white}
+.sales-filters{gap:12px;margin-bottom:14px}
+.sales-bars{display:grid;grid-auto-columns:minmax(28px,1fr);grid-auto-flow:column;gap:8px;min-height:150px;overflow-x:auto}
+.sales-bar-slot{height:145px;display:grid;grid-template-rows:1fr auto;align-items:end;text-align:center}
+.sales-bar-slot i{height:var(--height);width:65%;justify-self:center;background:#36776f;border-radius:3px 3px 0 0}
+.sales-bar-slot span{padding-top:5px;border-top:1px solid #ccc;font-size:.72rem}
+.sales-bars.compact{min-height:0;grid-auto-columns:minmax(5px,1fr);gap:3px;min-width:115px}
+.sales-bars.compact .sales-bar-slot{height:30px}
+.sales-bars.compact .sales-bar-slot span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
@@ -746,11 +754,11 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices"];
+  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis"];
   const departments = [
     {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
-    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[8,9,3,5]},
+    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[8,9,10,3,5]},
     {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
     {id:"accounts", name:"Accounts", scope:"Ledger, payments and reporting", pages:[]},
     {id:"legal", name:"Patent & Legal Team", scope:"Patents, IP and contracts", pages:[]},
@@ -1622,6 +1630,7 @@ function mountRegister(root) {
     else if(page === 5) screen.insertAdjacentHTML("beforeend", sales());
     else if(page === 6) screen.insertAdjacentHTML("beforeend", settings());
     else if(page === 8 || page === 9) screen.insertAdjacentHTML("beforeend", estimatesPage(page === 9));
+    else if(page === 10) screen.insertAdjacentHTML("beforeend", salesAnalysis());
   }
 
   // Recipe row in BOM editor
@@ -1841,6 +1850,53 @@ function mountRegister(root) {
     return id;
   }
 
+  let salesPeriod = 12, salesProject = "";
+  function salesAnalysis() {
+    const current = day().slice(0,7).split("-").map(Number);
+    const months = Array.from({length:salesPeriod},(_,index) =>
+      new Date(Date.UTC(current[0],current[1] - salesPeriod + index,1)).toISOString().slice(0,7));
+    const labels = months.map(month => new Intl.DateTimeFormat("en-IN",{month:"short",year:"2-digit",timeZone:"UTC"})
+      .format(new Date(month + "-01T00:00:00Z")));
+    const invoices = db.invoices || [];
+    const names = [...new Set(invoices.map(invoice => invoice.project || "Unassigned"))].sort();
+    const totals = {value:0,received:0,count:0,months:months.map(() => 0)};
+    const projects = new Map();
+    for (const invoice of invoices) {
+      const name = invoice.project || "Unassigned";
+      const index = months.indexOf((invoice.createdAt || "").slice(0,7));
+      if (index < 0 || (salesProject && salesProject !== name)) continue;
+      const row = projects.get(name) || {value:0,received:0,count:0,months:months.map(() => 0)};
+      projects.set(name,row);
+      for (const group of [row,totals]) {
+        group.count++;
+        group.value += invoice.subtotalCents;
+        group.received += invoice.subtotalCents - invoiceBalance(invoice);
+        group.months[index] += invoice.subtotalCents;
+      }
+    }
+    const currency = cents => money(cents / 100);
+    const chart = (values, compact = false) => {
+      const max = Math.max(1,...values);
+      return `<div class="sales-bars${compact ? " compact" : ""}">${values.map((value,index) => {
+        const detail = labels[index] + " · " + currency(value);
+        return `<div class="sales-bar-slot" title="${esc(detail)}"><i aria-hidden="true" style="--height:${100 * value / max}%"></i>
+          <span class="${compact ? "sr-only" : ""}">${esc(compact ? detail : labels[index])}</span></div>`;
+      }).join("")}</div>`;
+    };
+    const rows = [...projects.entries()].sort(([,a],[,b]) => b.value-a.value).map(([name,row]) =>
+      `<tr><th scope="row">${esc(name)}</th><td>${row.count}</td><td>${esc(currency(row.value))}</td>
+      <td>${esc(currency(row.received))}</td><td>${esc(currency(row.value-row.received))}</td><td>${chart(row.months,true)}</td></tr>`).join("");
+    return heading("","Sales Analysis","Track invoice value, payments and outstanding balances by project.") +
+      `<div class="row sales-filters">${options("sales-period","Invoice period",[[6,"Last 6 months"],[12,"Last 12 months"]],salesPeriod)}
+      <label>Project<select name="sales-project"><option value="">All projects</option>${names.map(name =>
+        `<option value="${esc(name)}" ${name === salesProject ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label></div>` +
+      stats([["Invoice value",currency(totals.value)],["Received",currency(totals.received)],
+        ["Outstanding",currency(totals.value-totals.received)],["Invoices",totals.count]]) +
+      panel("","Monthly invoice value",totals.count ? chart(totals.months) : empty("No invoices in this period.")) +
+      panel("","Project breakdown",rows ? grid(["Project","Invoices","Invoice value","Received","Outstanding","Monthly trend"],rows) : empty("Project totals appear when invoices are available.")) +
+      empty("Values are before tax and include draft invoices. Received includes applied advances and payments against invoices in the selected period.");
+  }
+
   let estimateSelection = "", invoiceSelection = "";
   function invoiceBalance(invoice) {
     return invoice.subtotalCents - invoice.advanceCents - (invoice.payments || []).reduce((sum,payment) => sum + payment.cents,0);
@@ -1873,7 +1929,15 @@ function mountRegister(root) {
       <p>${esc(doc.invoice.note || "")}</p><p>Advance applied · ${esc(money(doc.invoice.advanceCents / 100))}</p><p>Balance before tax · ${esc(money(invoiceBalance(doc.invoice) / 100))}</p></div>` : "";
     return format(template.head,{TITLE:title.toUpperCase(),DATE:date}).replace(/<div class="toolbar">.*?<\/div>/,"") + lines +
       format(template.tail,{TOTAL:money(estimateTotal(doc.items) / 100)}) +
-      (footer ? `<tr><td colspan="${template.columnCount}">${footer}</td></tr>` : "") + template.terms + template.end;
+      (footer ? `<tr><td colspan="${template.columnCount}">${footer}</td></tr>` : "") + template.terms + template.end.replace("</html>",`<style>
+      @media screen { table {zoom:var(--preview-scale,1)} }
+      </style><script>
+      const sheet = document.querySelector("table");
+      const sheetWidth = parseFloat(sheet.style.width);
+      const fit = () => { if (sheetWidth > 0) sheet.style.setProperty("--preview-scale", Math.min(1, document.documentElement.clientWidth / sheetWidth)); };
+      window.addEventListener("resize",fit);
+      fit();
+      <\/script></html>`);
   }
 
   function estimatesPage(invoices) {
@@ -1885,23 +1949,19 @@ function mountRegister(root) {
     const list = records.map(record => btn((invoices ? record.id + " · " + record.project : record.ref + " · " + record.name),
       "billing-select",keyFor(record),key.startsWith(record.id + ":") ? "primary" : "")).join("");
     const latest = doc?.estimate?.versions?.at(-1);
-    const historical = latest && doc.issued !== latest;
     const linked = doc?.estimate && (db.invoices || []).find(invoice => invoice.estimateId === doc.id && invoice.issuedFromRevision === doc.issued.revision);
     const label = invoices ? "Invoice" : "Estimate";
     const actions = doc ? btn("Edit " + label,invoices ? "invoice-edit" : "estimate-edit",key) +
       btn("Send " + label,"billing-send",key) + (!invoices ? btn(linked ? "View Invoice" : "Convert to Invoice","billing-convert",key) : "") +
-      btn("Share Details","billing-share",key) + btn("Print / Save PDF","billing-print") + btn("Record Payment","billing-payment",key) : "";
-    const history = doc?.estimate?.versions?.map(version => btn(estimateVersion(version),"billing-select",doc.id + ":" + version.revision)).join("") || "";
+      btn("Print / Save PDF","billing-print") + btn("Record Payment","billing-payment",key) : "";
+    const history = doc?.estimate?.versions?.length > 1 ? doc.estimate.versions.map(version => btn(estimateVersion(version),"billing-select",doc.id + ":" + version.revision,doc.issued === version ? "primary" : "")).join("") : "";
     const status = doc?.estimate?.payment ? "Advance recorded" : doc?.invoice ? doc.invoice.status || "Draft" : latest ? "Issued" : "Draft";
     return heading("",invoices ? "Invoices" : "Estimates","",invoices ? "" :
       btn("+ Add New Estimate","estimate-new") + btn("Import Enlighten output","estimate-import","","primary")) +
-      `<section class="billing-workspace"><aside aria-label="${label} list">${list || empty("No " + label.toLowerCase() + "s yet.")}</aside>
-      <div class="billing-detail">${doc ? `<header><strong>${esc(doc.title)}</strong><small>${esc(doc.invoice?.id || doc.estimate.ref)} · ${status}</small></header>
+      `<section class="billing-workspace"><div class="billing-detail">${doc ? `<header><strong>${esc(doc.title)}</strong><small>${esc(doc.invoice?.id || doc.estimate.ref)} · ${status}</small></header>
       <nav class="row billing-toolbar" aria-label="${label} actions">${actions}</nav>
-      ${!invoices ? `<div class="row billing-toolbar">${!historical && !doc.estimate.payment ?
-        btn(latest ? "Issue next revision" : "Issue version 1","estimate-issue",doc.id) +
-        btn("Import updated technical output","estimate-import-revision",doc.id) : ""}${history}</div>` : ""}
-      <iframe id="billing-preview" title="${label} document" srcdoc="${esc(documentHTML(doc))}"></iframe>` : ""}</div></section>`;
+      <iframe id="billing-preview" title="${label} document" srcdoc="${esc(documentHTML(doc))}"></iframe>` : empty("No " + label.toLowerCase() + "s yet.")}</div>
+      ${list ? `<nav class="billing-tabs" aria-label="${label} list">${list}${history}</nav>` : ""}</section>`;
   }
 
   async function saveEstimate(action, estimate) {
@@ -2107,7 +2167,9 @@ function mountRegister(root) {
       actions["production-sheet"](id);
     },
     "estimate-new": () => reviseEstimate(null,null,true),
-    "estimate-import": id => modal("Import Enlighten output",
+    "estimate-import": () => modal("Import Enlighten output",
+      options("estimateTarget","Import into",[["new","New estimate"],...(db.estimates || []).filter(estimate => !estimate.payment)
+        .map(estimate => [estimate.id,estimate.ref + " · " + estimate.name])],"new") +
       '<label>Product Technical Table export<input name="transfer" type="file" accept=".json,application/json" required></label>',
       async form => {
         const file = form.get("transfer");
@@ -2122,24 +2184,19 @@ function mountRegister(root) {
               (item.kind === "Linear" && (!Number.isSafeInteger(item.lengthMm) || item.lengthMm < 1)))) {
           throw Error("Export a completed Product Technical Table with 1–300 lines from Enlighten.");
         }
-        const estimate = find(db.estimates || [],id);
+        const target = required(form,"estimateTarget");
+        const estimate = find(db.estimates || [],target);
+        if (target !== "new" && (!estimate || estimate.payment)) throw Error("Select an estimate that has not been released.");
         if (estimate?.source?.projectId && estimate.source.projectId !== output.projectId) throw Error("Select an export for the same project.");
         return () => reviseEstimate(estimate, output);
       },"Review estimate"),
-    "estimate-issue": id => {
-      const estimate = find(db.estimates || [],id);
-      if (!estimate || estimate.payment) return;
-      $("dialog").close();
-      reviseEstimate(estimate);
-    },
-    "estimate-import-revision": id => {
-      $("dialog").close();
-      actions["estimate-import"](id);
-    },
     "billing-select": key => {
       if (key.endsWith(":invoice")) { invoiceSelection = key; page = 9; }
       else { estimateSelection = key; page = 8; }
       render();
+      const tabs = root.querySelector(".billing-tabs");
+      const active = [...(tabs?.querySelectorAll("button") || [])].find(button => button.dataset.id === key);
+      if (active) tabs.scrollLeft = active.offsetLeft - tabs.offsetLeft;
     },
     "estimate-edit": key => {
       const doc = selectedDocument(key);
@@ -2195,16 +2252,21 @@ function mountRegister(root) {
     },
     "billing-send": key => {
       const doc = selectedDocument(key);
+      if (doc.estimate && !doc.issued.issuedAt) {
+        const {estimate} = doc;
+        modal("Send Estimate",empty("Issue this draft and prepare the email. You can attach the PDF in your email app."),
+          async () => {
+            const result = await saveEstimate("estimateIssue",{id:estimate.id,revision:estimate.versions?.length || 0,
+              name:estimate.name,source:estimate.source,items:estimate.items});
+            const issued = result.estimate.versions.at(-1);
+            return () => actions["billing-send"](estimate.id + ":" + issued.revision);
+          },"Issue and prepare email");
+        return;
+      }
       const ref = doc.invoice?.id || doc.estimate.ref;
       const body = doc.title + "\n" + ref + "\nTotal: " + money(estimateTotal(doc.items)/100);
       modal("Send " + doc.label,empty("Save a PDF to attach in your email app.") +
         `<a class="btn" href="mailto:?subject=${encodeURIComponent(doc.label + " " + ref)}&amp;body=${encodeURIComponent(body)}">Open email draft</a>`);
-    },
-    "billing-share": async key => {
-      const doc = selectedDocument(key);
-      await navigator.clipboard.writeText(doc.label + " " + (doc.invoice?.id || doc.estimate.ref) + "\n" +
-        doc.title + "\nTotal: " + money(estimateTotal(doc.items)/100));
-      note(doc.label + " details copied.");
     },
     "billing-print": () => $("billing-preview").contentWindow.print(),
     "dispatch-invoice": id => actions["billing-select"](id + ":invoice"),
@@ -2723,6 +2785,14 @@ function mountRegister(root) {
   };
 
   
+  listen(root, "change", event => {
+    const {name,value} = event.target;
+    if (name !== "sales-period" && name !== "sales-project") return;
+    if (name === "sales-period") salesPeriod = Number(value);
+    else salesProject = value;
+    render();
+    root.querySelector(`[name="${name}"]`)?.focus({preventScroll:true});
+  });
   listen(root, "input", event => {
     if(event.target.id === "nomen-search") {
       nomenFilter.query = event.target.value;
@@ -2760,6 +2830,14 @@ function mountRegister(root) {
   });
 
   
+  listen(root, "change", event => {
+    const {name,value} = event.target;
+    if (name !== "sales-period" && name !== "sales-project") return;
+    if (name === "sales-period") salesPeriod = Number(value);
+    else salesProject = value;
+    render();
+    root.querySelector(`[name="${name}"]`)?.focus({preventScroll:true});
+  });
   listen(root, "input", event => {
     if(event.target.id === "catalog-query") {
       catalogState[page].query = event.target.value;
