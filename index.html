@@ -760,6 +760,8 @@ function mountRegister(root) {
       revision = result.revision;
       housingData = result.housingData || null;
       housingDatabase = result.housingDatabase || null;
+      housingBomMaster = result.housingBomMaster || {};
+      housingSupplierAliases = result.housingSupplierAliases || null;
       canWrite = result.canWrite;
       canSeed = result.canSeed;
       loaded = true;
@@ -784,12 +786,12 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS", "Teams & Tasks", "Production Sheets"];
+  const pages = ["Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS", "Teams & Tasks", "Production Sheets", "Supplier Aliases", "Supplier Master"];
   const departments = [
     {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,13,1,2,3,4,5,6,12]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
     {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[11,8,9,10,3,5]},
-    {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
+    {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1,14,15]},
     {id:"accounts", name:"Accounts", scope:"Ledger, payments and reporting", pages:[]},
     {id:"legal", name:"Patent & Legal Team", scope:"Patents, IP and contracts", pages:[]},
     {id:"hr", name:"HR & Team Building", scope:"Recruitment, onboarding and training", pages:[]}
@@ -1688,7 +1690,7 @@ function mountRegister(root) {
     return productCards(products, {components:false});
   }
 
-  let housingDatabase = null, bomView = "all";
+  let housingDatabase = null, housingBomMaster = {}, housingSupplierAliases = null, bomView = "all";
 
   function housingDatabaseTable() {
     if (!housingDatabase) return empty("Housing Database is unavailable. Reload the production register.");
@@ -1699,7 +1701,7 @@ function mountRegister(root) {
     });
     const widths = [56,120,108,85,177,112,145,68,142,100,58,58,156,88,85,125,155,95,128,60,87,72,115];
     const columns = widths.map(width => `<col style="width:${width}px">`).join("");
-    const header = headers.map(label => `<th scope="col">${esc(label)}</th>`).join("");
+    const header = headers.map(label => `<th scope="col">${esc(label)}</th>`).join("") + '<th scope="col">Actions</th>';
     const body = shown.map(row => `<tr>${headers.map((_,column) => {
       const tag = column === 0 ? "th" : "td";
       const thumbnail = column === 1 && localThumbnails["Housing-" + row[0]];
@@ -1707,13 +1709,54 @@ function mountRegister(root) {
       return `<${tag}${column === 0 ? ' scope="row"' : ''}${style}>${thumbnail
         ? `<img loading="lazy" decoding="async" src="${esc(thumbnail)}" alt="${esc(row[4] || "Housing " + row[0])}">`
         : esc(row[column])}</${tag}>`;
-    }).join("")}</tr>`).join("");
+    }).join("")}<td class="housing-row-actions">${btn("Configure","housing-configure",row[0],"mini")}
+        ${btn("Single-level BOM","housing-bom-single",row[0],"mini")}
+        ${btn("Multi-level BOM","housing-bom-multi",row[0],"mini")}</td></tr>`).join("");
     const title = bomView === "linear" ? "Linear Database" : bomView === "other" ? "Other Housings" : "Housing Database";
     return `<div class="housing-database-scroll" tabindex="0" role="region" aria-label="${title}">
-      <table class="housing-database-grid" style="width:${sum(widths)}px">
+      <table class="housing-database-grid" style="width:${sum(widths)+150}px">
         <caption class="housing-database-caption">${title} · ${shown.length} entries</caption>
-        <colgroup>${columns}</colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody>
+        <colgroup>${columns}<col style="width:150px"></colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody>
       </table></div>`;
+  }
+
+  let supplierMaster = null;
+  let supplierMasterExpiry, supplierUnlockVersion = 0;
+
+  function clearSupplierMaster() {
+    supplierUnlockVersion++;
+    clearTimeout(supplierMasterExpiry);
+    supplierMaster = null;
+  }
+
+  function supplierMasterPage() {
+    return heading("", "Supplier Master", "",
+      supplierMaster ? btn("Lock","supplier-master-lock") : btn("Unlock Supplier Master","supplier-master-unlock","","primary")) +
+      (supplierMaster ? grid(supplierMaster.headers.map(esc),supplierMaster.rows.map(row =>
+        `<tr>${supplierMaster.headers.map((_,i) => `<td>${esc(row[i] ?? "")}</td>`).join("")}</tr>`).join(""))
+        : empty("Enter the Supplier Master password to view supplier records."));
+  }
+
+  function supplierAliasesPage() {
+    if (!housingSupplierAliases) return heading("", "Supplier Aliases", "") + empty("Supplier aliases are unavailable. Reload the production register.");
+    const {headers,rows} = housingSupplierAliases;
+    return heading("", "Supplier Aliases", "Manufacturer model numbers by housing serial number.") +
+      grid(["Housing S#", ...headers.map(esc)],rows.map(row =>
+        `<tr><th scope="row">${esc(row[0])}</th>${row.slice(1).map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join(""));
+  }
+
+  function showHousingBom(serial, multiLevel) {
+    const housing = housingData?.housings[serial];
+    const sections = housingBomMaster[serial] || {};
+    const single = Object.entries(sections).map(([name, rows]) => `<h3>${esc(name)}</h3>` +
+      grid(["S#","Dimension","Description","SKU","Quantity","Unit","#Tag"],rows.map(row =>
+        `<tr>${row.map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join(""))).join("");
+    const content = multiLevel ?
+      (housing?.tree.length ? bomTree(housing.tree) : empty("No multi-level assembly is recorded for this housing.")) :
+      (single || empty("No single-level BOM is recorded for this housing."));
+    modal((multiLevel ? "Multi-level BOM" : "Single-level BOM") + " · D." + serial,
+      `<p>${esc(housing?.name || "")}</p>` + content);
+    $("dialog").classList.add("housing-config-dialog");
   }
 
   // Tab 03: BOM & Specifications
@@ -1977,6 +2020,10 @@ function mountRegister(root) {
         + panel("", "Workspace", "<p>No workflow is connected to this department yet.</p>");
       return;
     }
+    if (department.id === "purchase" && page === 15) {
+      screen.innerHTML = supplierMasterPage();
+      return;
+    }
     const requiresRegister = page !== 3 && page !== 4;
     screen.innerHTML = department.id === "manufacturing" || (department.id === "sales" && [8,9,11].includes(page)) ? "" : heading("", department.name, department.scope);
     if (!loaded && requiresRegister) {
@@ -1997,6 +2044,7 @@ function mountRegister(root) {
     else if(page === 11) screen.insertAdjacentHTML("beforeend", quoteBuilder());
     else if(page === 12) screen.insertAdjacentHTML("beforeend", manufacturingTeam());
     else if(page === 13) screen.insertAdjacentHTML("beforeend", productionSheetsPage());
+    else if(page === 14) screen.insertAdjacentHTML("beforeend", supplierAliasesPage());
   }
 
   // Recipe row in BOM editor
@@ -2059,8 +2107,8 @@ function mountRegister(root) {
     const candidates = finished ? [[item.code, "", "", ""]] : housing.options;
     const choices = [...new Set(candidates.map(row => row[1]))];
     const variants = [...new Set([...Object.keys(housing.variants), ...choices])];
-    let variant = (onQuote || inventoryView) && variants.length && !finished ? null : (choices[0] ?? variants[0] ?? "");
-    let led = "", driver = "";
+    let variant = !finished && variants.some(Boolean) ? null : (choices[0] ?? variants[0] ?? "");
+    let led = null, driver = null;
     const variantRows = variants.map(code => [code, [housing.variants[code] || []]]);
     const variantTable = variants.length && !finished ? configurationTable(
       "housing-variant", "Housing variant",
@@ -2086,23 +2134,23 @@ function mountRegister(root) {
     const ledSlot = $("housing-led"), driverSlot = $("housing-driver"), resultSlot = $("housing-selection");
 
     function refresh(change) {
-      if (variant === null) { resultSlot.textContent = "Select a housing variant to see matching LEDs and drivers."; return; }
+      if (variant === null) { resultSlot.textContent = "Select a housing variant to see matching LEDs."; return; }
       const byVariant = candidates.filter(row => row[1] === variant);
-      const leds = [...new Set(byVariant.map(row => row[2]))];
-      if (!leds.includes(led)) led = leds[0];
-      const drivers = [...new Set(byVariant.filter(row => row[2] === led).map(row => row[3]))];
-      if (!drivers.includes(driver)) driver = drivers[0];
-      if (!finished && change !== "housing-config-code") {
-        if (change !== "housing-led" && change !== "housing-driver") {
-          ledSlot.innerHTML = configurationTable("housing-led", "LED",
-            ["Product code", "Size (mm)", "Power", "Current", "Voltage", "CCT", "CRI"], componentRows("led", leds), led);
-        }
-        if (change !== "housing-driver") {
-          driverSlot.innerHTML = configurationTable("housing-driver", "Driver",
-            ["Product code", "CV / CC", "Voltage", "Current", "Load", "Control", "IP", "Make"], componentRows("drivers", drivers), driver);
+      const leds = [...new Set(byVariant.map(row => row[2]))].filter(Boolean);
+      const drivers = [...new Set(byVariant.filter(row => row[2] === led).map(row => row[3]))].filter(Boolean);
+      if (!finished) {
+        if (change !== "housing-led" && change !== "housing-driver" && change !== "housing-config-code")
+          ledSlot.innerHTML = configurationTable("housing-led","LED",
+            ["Product code","Size (mm)","Power","Current","Voltage","CCT","CRI"],componentRows("led",leds),led);
+        if (change !== "housing-driver" && change !== "housing-config-code")
+          driverSlot.innerHTML = led ? configurationTable("housing-driver","Driver",
+            ["Product code","CV / CC","Voltage","Current","Load","Control","IP","Make"],componentRows("drivers",drivers),driver) : "";
+        if (!led || !driver) {
+          resultSlot.textContent = !led ? "Select a matching LED to see drivers." : "Select a matching driver to review the configuration.";
+          return;
         }
       }
-      const matches = byVariant.filter(row => row[2] === led && row[3] === driver);
+      const matches = byVariant.filter(row => row[2] === (finished ? "" : led) && row[3] === (finished ? "" : driver));
       const chosen = (change === "housing-config-code"
         ? matches.find(row => row[0] === form.elements["housing-config-code"]?.value) : null) || matches[0];
       if (!chosen) {
@@ -2160,8 +2208,8 @@ function mountRegister(root) {
     }
     form.addEventListener("change", event => {
       const {name, value} = event.target;
-      if (name === "housing-variant") { variant = value; led = ""; driver = ""; }
-      if (name === "housing-led") { led = value; driver = ""; }
+      if (name === "housing-variant") { variant = value; led = null; driver = null; }
+      if (name === "housing-led") { led = value; driver = null; }
       if (name === "housing-driver") driver = value;
       if (name.startsWith("housing-")) refresh(name);
     });
@@ -2262,15 +2310,26 @@ function mountRegister(root) {
 
   function addQuoteProduct(item) {
     const projectId = quoteProject;
+    const serial = item.configuration?.housing?.slice(8);
+    const accessoryCodes = new Set((housingBomMaster[serial]?.Accessories || []).map(row => row[3].toUpperCase()));
+    const catalog = db.billingProducts || db.menu;
+    const accessories = catalog.filter(product => product.price > 0 && accessoryCodes.has(String(product.code || "").toUpperCase()) &&
+      catalog.filter(other => other.code?.toUpperCase() === product.code.toUpperCase()).length === 1);
+    const accessoryFields = accessories.length ? '<fieldset><legend>Optional accessories</legend>' +
+      accessories.map((product,index) => `<label><input type="checkbox" name="accessory" value="${index}">
+        ${esc(product.code)} · ${esc(product.name)} · ${money(product.price)} per housing</label>`).join("") + '</fieldset>' : "";
     modal("Add " + item.name,`<p>${esc(item.code)}</p>` + amount("quantity","Quantity",1) +
-      billingPrice(0,item.price > 0 ? item.price : "") + input("circuit","Circuit number","","text","maxlength='100'"),
+      billingPrice(0,item.price > 0 ? item.price : "") + input("circuit","Circuit number","","text","maxlength='100'") + accessoryFields,
       form => {
         const draft = quoteDrafts.get(projectId) || {id:crypto.randomUUID(),lines:[]};
         const quoteLines = draft.lines;
-        if (quoteLines.length >= 300) throw Error("An estimate supports up to 300 lines.");
+        const selectedAccessories = [...new Set(form.getAll("accessory"))].map(index => accessories[Number(index)]).filter(Boolean);
+        if (quoteLines.length + 1 + selectedAccessories.length > 300) throw Error("An estimate supports up to 300 lines.");
         const count = number(read(form,"quantity"),1);
         const cents = number(read(form,"price0"),100);
         quoteLines.push({sku:item.code,name:item.name,count,cents,circuit:read(form,"circuit"),configuration:item.configuration});
+        selectedAccessories.forEach(product => quoteLines.push({sku:product.code,name:product.name,count,
+          cents:Math.round(product.price*100),circuit:read(form,"circuit")}));
         quoteDrafts.set(projectId,draft);
         render();
       },"Add to estimate");
@@ -2486,6 +2545,31 @@ function mountRegister(root) {
 
   // Actions Dispatcher
   const actions = {
+    "supplier-master-unlock": () => {
+      if (directoryOpen || department?.id !== "purchase" || page !== 15) return;
+      const version = ++supplierUnlockVersion;
+      modal("Unlock Supplier Master",input("password","Supplier Master password","","password","required maxlength='1024' autocomplete='off'"),
+        async form => {
+          const password = form.get("password");
+          $("dialog").querySelector('[name="password"]').value = "";
+          const {headers,rows} = await productionRequest("supplierMasterUnlock",{password});
+          if (version !== supplierUnlockVersion || directoryOpen || department?.id !== "purchase" || page !== 15) return;
+          supplierMaster = {headers,rows};
+          supplierMasterExpiry = setTimeout(() => actions["supplier-master-lock"](),10*60*1000);
+          render();
+        },"Unlock");
+    },
+    "supplier-master-lock": () => {
+      clearSupplierMaster();
+      if (!directoryOpen && department?.id === "purchase" && page === 15) render();
+    },
+    "housing-configure": serial => {
+      const item = find(legacyProducts,"Housing-" + serial);
+      if (!housingRecord(item)) throw Error("No configuration is recorded for housing D." + serial + ".");
+      configureHousing(item);
+    },
+    "housing-bom-single": serial => showHousingBom(serial,false),
+    "housing-bom-multi": serial => showHousingBom(serial,true),
     "bom-view": id => {
       bomView = id;
       render();
@@ -2842,6 +2926,7 @@ function mountRegister(root) {
       toggle.setAttribute("aria-expanded", String(toggle.getAttribute("aria-expanded") !== "true"));
     },
     "department-directory": () => {
+      clearSupplierMaster();
       $("section-toggle").setAttribute("aria-expanded", "false");
       directoryOpen = !department || !directoryOpen;
       if (directoryOpen) note("");
@@ -2863,6 +2948,7 @@ function mountRegister(root) {
     page: id => {
       const next = Number(id);
       if (!department?.pages.includes(next)) return;
+      if (page === 15 && next !== 15) clearSupplierMaster();
       page = next;
       if (next === 0 && !isProject(find(db.tables,selected) || {})) selected = db.tables.find(isProject)?.id;
       if (next === 7 && !db.tables.some(row => row.id === selected && !isProject(row))) {
@@ -3323,6 +3409,7 @@ function mountRegister(root) {
 
     "reload-production": () => directoryOpen ? refreshDepartments() : loadProduction(),
     "logout-production": async () => {
+      actions["supplier-master-lock"]();
       const response = await fetch("/api/inventory", {
         method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
         body:JSON.stringify({action:"logout"})
@@ -3467,6 +3554,7 @@ function mountRegister(root) {
 
   return () => {
     controller.abort();
+    clearSupplierMaster();
     root.classList.remove("kot-print");
     $("kot-print-area")?.remove();
     const dialog = $("dialog");
@@ -4190,6 +4278,8 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
 .retina-inventory-pos .housing-database-grid thead th{position:sticky;top:0;z-index:1;font-size:11pt;font-weight:700}
 .retina-inventory-pos .housing-database-grid .housing-spec-emphasis{font-family:"Helvetica Neue",Arial,sans-serif;font-weight:700}
 .housing-database-grid img{display:block;max-width:100%;height:68px;object-fit:contain;margin:auto}
+
+.housing-row-actions .btn{display:block;width:100%;margin:3px 0}
 
 `;
 document.getElementById('app-styles').textContent = styles;

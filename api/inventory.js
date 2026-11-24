@@ -1,3 +1,5 @@
+import housingBomMaster from "../server/housing-bom-master.js";
+import housingSupplierAliases from "../server/housing-supplier-aliases.js";
 import housingDatabase from "../server/housing-database.js";
 import housingData from "../server/housing-config-data.js";
 import crypto from 'node:crypto';
@@ -83,6 +85,23 @@ export default async function handler(req,res) {
     const access=accessFor(employee);
     const canSee=id=>access.departments.includes(id);
     if(action==='me') return res.json({email,role:employee.Role||employee.role||'Employee',name:profile?.name||email,departments:access.departments});
+    if (action === 'supplierMasterUnlock') {
+      if (!canSee('purchase')) return res.status(403).json({error:'Purchase access is required.'});
+      const expected = process.env.RETINA_SUPPLIER_MASTER_PASSWORD;
+      if (!expected) return res.status(503).json({error:'Supplier Master password is not configured.'});
+      const password = req.body.password;
+      const digest = value => crypto.createHash('sha256').update(value).digest();
+      if (typeof password !== 'string' || password.length > 1024 ||
+          !crypto.timingSafeEqual(digest(password),digest(expected)))
+        return res.status(403).json({error:'Incorrect Supplier Master password.'});
+      const sourceId = process.env.RETINA_SUPPLIER_MASTER_SHEET_ID || '1LADPQxBDBNOh112uyvJWly-9rOL4a1dAqyfhqg_NH4M';
+      const result = await sheets.spreadsheets.values.get({
+        spreadsheetId:sourceId,range:"'Supplier Master'!A3:H999",valueRenderOption:'FORMATTED_VALUE'
+      });
+      const [headers = [], ...data] = result.data.values || [];
+      if (headers.length !== 8) return res.status(502).json({error:'Supplier Master headers could not be read.'});
+      return res.json({ok:true,headers,rows:data.filter(row => row.some(value => String(value ?? '').trim()))});
+    }
     const estimateWrite = ['estimateSave','estimateIssue','estimatePayment','estimateEdit','invoiceEdit','invoicePayment','salesProjectCreate'].includes(action);
     if(action==='productionLoad' || action==='productionSave' || estimateWrite) {
       const manufacturing=canSee('manufacturing');
@@ -118,8 +137,9 @@ export default async function handler(req,res) {
         result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
       }
       return res.json({...result,canWrite,canSeed:access.admin,email,
-        ...(action === "productionLoad" && (manufacturing || sales) ? {housingData} : {}),
-        ...(action === "productionLoad" && manufacturing ? {housingDatabase} : {})});
+        ...(action === "productionLoad" && (manufacturing || sales) ? {housingData,housingBomMaster} : {}),
+        ...(action === "productionLoad" && manufacturing ? {housingDatabase} : {}),
+        ...(action === "productionLoad" && purchasing ? {housingSupplierAliases} : {})});
     }
     if(action==='catalog') {
       const canReadStock=canSee('manufacturing') || canSee('purchase');
