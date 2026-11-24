@@ -782,9 +782,9 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Orders & Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS"];
+  const pages = ["Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS", "Teams & Tasks"];
   const departments = [
-    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6]},
+    {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,1,2,3,4,5,6,12]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
     {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[11,8,9,10,3,5]},
     {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1]},
@@ -796,6 +796,8 @@ function mountRegister(root) {
   let page = 0, selected = db.tables[0]?.id, filter = "All", storageFilter = "";
   const catalogState = { 0: { query: "", category: "" }, 1: { query: "", category: "" }, 2: { query: "", category: "" }, 3: { query: "", category: "" }, 11: { query: "", category: "" } };
   let capacityView = "configured";
+  const attendanceDay = now => now.toLocaleDateString("sv-SE", {timeZone:"Asia/Kolkata"});
+  let attendanceDate = attendanceDay(new Date()), attendanceEngineer = "";
 
   const note = message => { if(!controller.signal.aborted) $("status").textContent = message; };
   const read = (f, name) => String(f.get(name) ?? "").trim();
@@ -1255,29 +1257,139 @@ function mountRegister(root) {
     modal(ticket.ref + " · " + ticket.table, kotMarkup(ticket) + `<p style="margin-top:14px">${btn("Print KOT", "kot-print", ticket.id, "primary")}</p>`);
   }
 
+  function workbenchStations(data) {
+    const benches = data.tables.filter(row => !isProject(row));
+    const numbered = [1, 2].map(number => benches.find(row => row.stationNumber === number));
+    const legacy = benches.filter(row => !numbered.includes(row));
+    const stations = numbered.map((saved, index) => saved || legacy.shift() || {
+      id: "wall-station-" + (index + 1), name: "Station " + (index + 1),
+      stationNumber: index + 1, kind: "Industrial workbench", area: workshopAreas[0], seats: 1, lines: []
+    });
+    return [stations, legacy];
+  }
+
+  function openStations(data) {
+    return workbenchStations(data).flat().filter(station => !station.lines.length && !station.productionSheetId && !station.builtAt && !station.checkId);
+  }
+
+  function stationLabel(data, bench) {
+    const index = workbenchStations(data)[0].findIndex(station => station.id === bench.id);
+    return index < 0 ? bench.name : "Wall workbench · Station " + (index + 1);
+  }
+
+  function workbenchPlan(stations, legacy) {
+    const stationCards = stations.map((station, index) => {
+      const sheet = find(db.productionSheets || [], station.productionSheetId);
+      const occupied = Boolean(sheet || station.lines.length || station.builtAt);
+      const content = `<span class="draft">Station ${index + 1}</span>
+        <strong>${esc(sheet?.name || (occupied ? station.jobReference || station.name : "Available"))}</strong>
+        <small>${esc(sheet?.ref || (occupied ? manufacturingStatus(station) : "No project assigned"))}</small>`;
+      return find(db.tables, station.id)
+        ? `<button type="button" class="btn station-slot" data-action="select" data-id="${esc(station.id)}" aria-pressed="${station.id === selected}">${content}</button>`
+        : `<div class="station-slot">${content}</div>`;
+    }).join("");
+    return `<figure class="wall-workbench">
+      <figcaption><strong>Wall workbench</strong><small>1000 mm high · 2 stations</small></figcaption>
+      <svg viewBox="0 0 360 112" role="img" aria-label="Rectangular workbench against the wall with two high chairs facing it"
+        fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+        <path d="M14 15h332M25 9l-6 6m36-6-6 6m36-6-6 6m36-6-6 6m36-6-6 6m36-6-6 6m36-6-6 6m36-6-6 6m36-6-6 6m36-6-6 6m36-6-6 6"/>
+        <rect x="27" y="16" width="306" height="42" rx="2" fill="var(--white)"/>
+        <path d="M180 23v28" stroke-dasharray="3 4"/>
+        <g fill="var(--blue)"><rect x="82" y="66" width="42" height="27" rx="6"/><rect x="236" y="66" width="42" height="27" rx="6"/></g>
+        <path d="M82 91v8h42v-8m112 0v8h42v-8"/>
+      </svg>
+      <div class="station-slots">${stationCards}</div>
+    </figure>${legacy.length ? '<h3>Other workbenches</h3>' + areaTables(legacy) : ""}`;
+  }
+
+  function productionQueue() {
+    const sheets = db.productionSheets || [];
+    const groups = [
+      ["Under Production", sheets.filter(sheet => sheet.status === "Assigned"), "No sheets assigned to production."],
+      ["Up for Production", sheets.filter(sheet => sheet.status === "Draft"), "No sheets waiting for production."],
+      ["Completed Tasks", sheets.filter(sheet => ["Built", "Dispatched"].includes(sheet.status)), "No completed production sheets."]
+    ];
+    return '<div class="production-queue">' + groups.map(([title, rows, noRows]) => panel("", title,
+      rows.length ? '<ul>' + rows.map(sheet => `<li><strong>${esc(sheet.name)}</strong>
+        <small>${esc([sheet.ref, sheet.bench, sheet.status === "Built" ? "Ready to dispatch" : sheet.status === "Dispatched" ? "Dispatched" : sheet.pending?.length ? "Product matches pending" : ""].filter(Boolean).join(" · "))}</small>
+        ${btn("Open sheet", "production-sheet", sheet.id, "mini")}</li>`).join("") + '</ul>' : empty(noRows))).join("") + '</div>';
+  }
+
+  function attendanceEntry(data, engineerId, date) {
+    return (data.engineerAttendance || []).find(row => row.engineerId === engineerId && row.date === date);
+  }
+
+  function attendanceCard(engineers) {
+    const engineer = find(engineers, attendanceEngineer) || engineers[0];
+    const log = engineer && attendanceEntry(db, engineer.id, attendanceDay(new Date()));
+    const unavailable = log && log.status !== "Present";
+    const status = !engineer ? "Add an engineer to record attendance" : unavailable ? log.status :
+      log?.checkOut ? "Checked out" : log?.checkIn ? "Checked in" : "Ready to check in";
+    const punch = (label, action, disabled) => `<button type="button" class="btn primary" data-action="${action}"
+      data-id="${esc(engineer.id)}" ${disabled ? "disabled" : ""}>${label}</button>`;
+    return `<section class="manufacturing-attendance" aria-label="Today's attendance">
+      <div><div class="draft">Attendance</div><strong>${esc(status)}</strong>
+        ${log?.checkIn ? `<small>${esc([log.checkIn, log.checkOut].filter(Boolean).join(" – "))} · IST</small>` : ""}
+      </div>
+      ${engineer ? `<div class="row">
+        ${options("attendance-engineer", "Engineer", engineers.map(row => [row.id, row.name]), engineer.id)}
+        ${canWrite ? punch("Check in", "engineer-check-in", unavailable || log?.checkIn || log?.checkOut) +
+          punch("Check out", "engineer-check-out", unavailable || !log?.checkIn || log?.checkOut) : ""}
+      </div>` : ""}
+    </section>`;
+  }
+
+  function recordAttendancePunch(data, id, checkingOut, now) {
+    if (!find(data.engineers || [], id)) throw Error("Select an engineer first.");
+    const date = attendanceDay(now);
+    const time = now.toLocaleTimeString("en-GB", {timeZone:"Asia/Kolkata", hour:"2-digit", minute:"2-digit", hourCycle:"h23"});
+    const log = attendanceEntry(data, id, date);
+    if (log && log.status !== "Present") throw Error("Update the attendance status before recording a check-in.");
+    if (checkingOut) {
+      if (!log?.checkIn || log.checkOut || time < log.checkIn) throw Error("An open check-in for today is required.");
+      log.checkOut = time;
+    } else {
+      if (log?.checkIn || log?.checkOut) throw Error("This engineer already checked in today.");
+      if (log) log.checkIn = time;
+      else {
+        data.engineerAttendance ||= [];
+        data.engineerAttendance.push({engineerId:id, date, status:"Present", checkIn:time, checkOut:""});
+      }
+    }
+  }
+
+  function manufacturingTeam() {
+    const engineers = db.engineers || [];
+    const punches = db.engineerAttendance || [];
+    const tasks = (db.productionSheets || []).filter(sheet => sheet.status !== "Dispatched");
+    return heading("", "Teams & Tasks", "Manage manufacturing engineers, production assignments, and daily attendance.",
+      canWrite ? btn("+ Add Engineer", "engineer-add", "", "primary") : "") +
+      attendanceCard(engineers) +
+      panel("", "Engineers", engineers.length ? grid(["Name", "Role"], engineers.map(engineer =>
+        `<tr><th scope="row">${esc(engineer.name)}</th><td>${esc(engineer.role)}</td></tr>`).join("")) : empty("No engineers added yet.")) +
+      panel("", "Attendance register", input("engineer-attendance-date", "Date", attendanceDate, "date", "required") +
+        grid(["Engineer", "Check-in", "Check-out", "Status", ...(canWrite ? ["Action"] : [])], engineers.map(engineer => {
+          const log = punches.find(row => row.engineerId === engineer.id && row.date === attendanceDate);
+          return `<tr><th scope="row">${esc(engineer.name)}</th><td>${esc(log?.checkIn || "—")}</td><td>${esc(log?.checkOut || "—")}</td>
+            <td>${esc(log?.status || "Unrecorded")}</td>${canWrite ? `<td>${btn(log ? "Edit" : "Record", "engineer-attendance", engineer.id, "mini")}</td>` : ""}</tr>`;
+        }).join(""))) +
+      panel("", "Production tasks", tasks.length ? grid(["Project / sheet", "Status", "Engineer", "Actions"], tasks.map(sheet =>
+        `<tr><th scope="row">${esc(sheet.name)}<small> ${esc(sheet.ref)}</small></th><td>${esc(sheet.status)}</td>
+          <td>${esc(find(engineers, sheet.engineerId)?.name || "Unassigned")}</td>
+          <td>${btn("Open sheet", "production-sheet", sheet.id, "mini")}
+          ${canWrite && engineers.length ? btn("Assign engineer", "engineer-task", sheet.id, "mini") : ""}</td></tr>`).join("")) : empty("No open production tasks."));
+  }
+
   // Tab 01: Assembly Floor & POS
   function dining() {
     const active = find(db.tables, selected);
     const projects = db.tables.filter(isProject);
     const project = active && isProject(active) ? active : null;
     const current = active && (!isProject(active) || active.checkId || active.kotSent || active.builtAt) ? active : null;
-    const todayDispatches = db.sales.filter(s => s.date === day() && s.currency === db.currency);
-    const stations = db.tables.filter(t => !isProject(t) || t.checkId || t.kotSent || t.builtAt);
-    const open = stations.filter(t => t.lines.length).length;
-    const areas = [...new Set([...workshopAreas, ...stations.map(t => t.area)])];
-
-    const plan = areas.map(area => {
-      const tables = stations.filter(t => t.area === area);
-      const available = tables.filter(t => !t.lines.length).length;
-      return `<section class="plan-zone"><div class="zone-title row between"><h3 class="area draft">${esc(floorAreaLabel(area))}</h3><p class="draft">${available} / ${tables.length} benches open</p></div>
-        ${tables.length ? areaTables(tables) : empty("No workbenches in this bay.")}</section>`;
-    }).join("");
-
+    const [stations, legacy] = workbenchStations(db);
+    const plan = workbenchPlan(stations, legacy);
     const projectPlan = `<section class="plan-zone"><div class="zone-title row between"><h3 class="area draft">Projects</h3>
       <p class="draft">${projects.length} projects</p></div>${projects.length ? areaTables(projects) : empty("No projects yet.")}</section>`;
-
-    const legend = '<ul class="row plan-legend" aria-label="Workbench status"><li><span class="swatch"></span>Available</li><li><span class="swatch occupied"></span>Active Job</li><li><span class="swatch current"></span>Selected</li></ul>';
-
 
     let shortage = "";
     if(current?.lines.length) {
@@ -1297,9 +1409,10 @@ function mountRegister(root) {
           : manufacturingStatus(current) === "In production" ? btn("Mark built", "mark-built", current.id, "primary") : ""}` :
         empty("Send a production sheet from Projects to this workbench.") + kotControls(current));
 
-    return heading("01 / Assembly floor & POS", "Production floor", "Select a project to prepare production or dispatch stock. Select a workbench to run an assembly job.", canWrite ? btn("+ Add Project", "project-new", "", "primary") + btn("+ Workbench", "table") : "") +
-      stats([["Active Workbenches", open], ["Available Benches", stations.length - open], ["Station Capacity", sum(stations.map(t => t.seats || 0))], ["Dispatches today", money(sum(todayDispatches.map(s => s.total))) + " (" + todayDispatches.length + ")"]]) +
-      `<div class="split"><div>${panel("01A", "Workbenches & Projects", legend + projectPlan + plan, "plan")}</div>
+    return heading("", "Production", "Review the production queue and select a station or project.",
+      canWrite ? btn("+ Add Project", "project-new", "", "primary") : "") +
+      productionQueue() +
+      `<div class="split"><div>${panel("", "Workbenches", plan, "plan")}${panel("", "Projects", projectPlan, "plan")}</div>
       ${panel("01C", esc(project?.name || current?.name || "Current Station Check"),
         project ? projectOrder(project) + (current ? "<h3>Existing assembly job</h3>" + check : "") : check)}</div>` +
       panel("01B","Select Products",staffCatalog({ordering:true,canOrder:canWrite && !!project && !current}));
@@ -1725,6 +1838,7 @@ function mountRegister(root) {
     else if(page === 8 || page === 9) screen.insertAdjacentHTML("beforeend", estimatesPage(page === 9));
     else if(page === 10) screen.insertAdjacentHTML("beforeend", salesAnalysis());
     else if(page === 11) screen.insertAdjacentHTML("beforeend", quoteBuilder());
+    else if(page === 12) screen.insertAdjacentHTML("beforeend", manufacturingTeam());
   }
 
   // Recipe row in BOM editor
@@ -2276,10 +2390,52 @@ function mountRegister(root) {
         lines:project.lines,pending:[],createdAt:new Date().toISOString()});
       project.lines = [];
     }),
+    "engineer-check-in": id => update(data => recordAttendancePunch(data, id, false, new Date())),
+    "engineer-check-out": id => update(data => recordAttendancePunch(data, id, true, new Date())),
+    "engineer-add": () => modal("Add Engineer", input("name", "Name") + input("role", "Role", "Engineer"), form => update(data => {
+      const name = required(form, "name"), role = required(form, "role");
+      data.engineers ||= [];
+      data.engineers.push({id: uid(), name, role});
+    })),
+    "engineer-attendance": id => {
+      const engineer = find(db.engineers || [], id);
+      const date = attendanceDate;
+      const log = (db.engineerAttendance || []).find(row => row.engineerId === id && row.date === date);
+      const statuses = ["Present", "Absent", "Leave"];
+      if (!engineer) return;
+      modal(engineer.name + " · " + date,
+        options("status", "Status", values(statuses), log?.status || "Present") +
+        input("checkIn", "Check-in", log?.checkIn, "time", "") +
+        input("checkOut", "Check-out", log?.checkOut, "time", ""), form => update(data => {
+          const status = required(form, "status"), checkIn = read(form, "checkIn"), checkOut = read(form, "checkOut");
+          if (!statuses.includes(status)) throw Error("Select a valid attendance status.");
+          if ((checkIn || checkOut) && status !== "Present") throw Error("Clear the times before marking absence or leave.");
+          if (checkOut && (!checkIn || checkOut < checkIn)) throw Error("Check-out must be on or after check-in.");
+          data.engineerAttendance ||= [];
+          const rows = data.engineerAttendance;
+          const entry = {engineerId:id, date, status, checkIn, checkOut};
+          const index = rows.findIndex(row => row.engineerId === id && row.date === date);
+          if (index < 0) rows.push(entry);
+          else rows[index] = entry;
+        }));
+    },
+    "engineer-task": id => {
+      const sheet = find(db.productionSheets || [], id);
+      if (!sheet) return;
+      modal("Assign engineer · " + sheet.ref,
+        options("engineer", "Engineer", [["unassigned", "Unassigned"], ...(db.engineers || []).map(row => [row.id, row.name])], sheet.engineerId || "unassigned"),
+        form => update(data => {
+          const current = find(data.productionSheets || [], id), engineerId = required(form, "engineer");
+          if (!current || current.status === "Dispatched") throw Error("This task is no longer open.");
+          if (engineerId === "unassigned") delete current.engineerId;
+          else if (find(data.engineers || [], engineerId)) current.engineerId = engineerId;
+          else throw Error("Select an engineer from the team register.");
+        }));
+    },
     "production-sheet": id => {
       const sheet = find(db.productionSheets || [],id);
       if (!sheet) return;
-      const benches = db.tables.filter(bench => !isProject(bench) && !bench.lines.length && !bench.productionSheetId);
+      const benches = openStations(db);
       const pending = sheet.pending || [];
       const requiredParts = new Map();
       for (const line of sheet.lines) {
@@ -2298,15 +2454,17 @@ function mountRegister(root) {
           pending.map(item => `<li>${esc(item.sku)} × ${esc(item.count)} · ${cutLength(item)} · ${sourceLocation(item)}</li>`).join("") + "</ul>" +
           (canWrite ? btn("Match products again","production-sheet-match",id) : "") : "") +
         (sheet.status === "Draft" && !pending.length ?
-          benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id,bench.name]),benches[0].id)
+          benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id, stationLabel(db, bench)]),benches[0].id)
             : empty("Create or free a workbench before sending this sheet.") : ""),
         canWrite && sheet.status === "Draft" && sheet.lines.length && !pending.length && benches.length ? form => update(data => {
           const current = find(data.productionSheets,id);
-          const bench = find(data.tables,required(form,"bench"));
+          const station = find(openStations(data),required(form,"bench"));
+          const bench = station && (find(data.tables, station.id) || station);
           if (!bench || isProject(bench) || bench.lines.length || bench.productionSheetId || current.status !== "Draft" || current.pending?.length)
             throw Error("This sheet or workbench is no longer available.");
           current.status = "Assigned";
-          current.bench = bench.name;
+          current.bench = stationLabel(data, bench);
+          if (!find(data.tables, bench.id)) data.tables.push(bench);
           bench.lines = structuredClone(current.lines);
           bench.productionSheetId = id;
           bench.jobReference = current.ref;
@@ -3025,6 +3183,18 @@ function mountRegister(root) {
   
   listen(root, "change", event => {
     const {name,value} = event.target;
+    if (name === "attendance-engineer") {
+      attendanceEngineer = value;
+      render();
+      root.querySelector('[name="attendance-engineer"]')?.focus({preventScroll:true});
+      return;
+    }
+    if (name === "engineer-attendance-date") {
+      attendanceDate = value || attendanceDay(new Date());
+      render();
+      root.querySelector('[name="engineer-attendance-date"]')?.focus();
+      return;
+    }
     if (name !== "sales-period" && name !== "sales-project") return;
     if (name === "sales-period") salesPeriod = Number(value);
     else salesProject = value;
@@ -3068,14 +3238,6 @@ function mountRegister(root) {
   });
 
   
-  listen(root, "change", event => {
-    const {name,value} = event.target;
-    if (name !== "sales-period" && name !== "sales-project") return;
-    if (name === "sales-period") salesPeriod = Number(value);
-    else salesProject = value;
-    render();
-    root.querySelector(`[name="${name}"]`)?.focus({preventScroll:true});
-  });
   listen(root, "input", event => {
     if(event.target.id === "catalog-query") {
       catalogState[page].query = event.target.value;
@@ -3791,6 +3953,29 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
   .register-sidebar .wordmark{font-size:32px}
   .register-sidebar .department-switch{margin-top:10px}
 }
+
+.production-queue,.station-slots{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.production-queue{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:14px}
+.production-queue .panel{min-width:0;margin:0}
+.production-queue ul{list-style:none;margin:0;padding:0}
+.production-queue li{display:grid;gap:4px;padding:8px 0;border-bottom:1px solid var(--soft)}
+.production-queue li button{justify-self:start}
+.production-queue small,.wall-workbench small{color:var(--muted)}
+.wall-workbench{margin:0;padding:12px;background:var(--white);border:1px solid var(--rule)}
+.wall-workbench figcaption{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.wall-workbench svg{display:block;width:100%;max-height:130px;margin:8px auto;color:var(--rust)}
+.station-slot{display:grid;align-content:start;gap:4px;padding:10px;text-align:left;border:1px solid var(--rule);overflow-wrap:anywhere}
+.station-slot[aria-pressed="true"]{background:var(--blue)}
+@media(max-width:760px){.production-queue{grid-template-columns:1fr}}
+
+.manufacturing-attendance{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;
+  margin:0 0 16px;padding:14px 16px;border:1px solid var(--rule);background:var(--white)
+}
+.manufacturing-attendance strong,.manufacturing-attendance small{display:block}
+.manufacturing-attendance small{color:var(--muted)}
+.manufacturing-attendance .row{align-items:end}
+.manufacturing-attendance .draft{color:var(--muted)}
 
 `;
 document.getElementById('app-styles').textContent = styles;
