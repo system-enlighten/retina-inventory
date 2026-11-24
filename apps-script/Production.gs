@@ -217,7 +217,7 @@ function retinaEstimateMutation_(state, input) {
       if (matches.length !== 1) { pending.push(item); return; }
       var product = matches[0];
       lines.push({id:Utilities.getUuid(),dish:product.id,name:product.name,group:product.group,code:item.sku,
-        price:item.cents / 100,recipe:product.recipe,count:item.count,bomRevision:product.bomRevision,configuration:product.configuration,
+        price:item.cents / 100,recipe:product.recipe,count:item.count,bomRevision:product.bomRevision,configuration:product.configuration,sourceBOM:product.sourceBOM || [],
         lengthMm:item.lengthMm,circuit:item.circuit,floor:item.floor,zone:item.zone});
     });
     if (!lines.length && !pending.length) return;

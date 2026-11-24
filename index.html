@@ -786,12 +786,12 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Production", "Inventory", "BOM", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS", "Teams & Tasks", "Production Sheets", "Supplier Aliases", "Supplier Master"];
+  const pages = ["Production", "Inventory", "Database", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS", "Teams & Tasks", "Production Sheets", "Supplier Aliases", "Supplier Master", "Production Purchases"];
   const departments = [
     {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,13,1,2,3,4,5,6,12]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
     {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[11,8,9,10,3,5]},
-    {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1,14,15]},
+    {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1,14,15,16]},
     {id:"accounts", name:"Accounts", scope:"Ledger, payments and reporting", pages:[]},
     {id:"legal", name:"Patent & Legal Team", scope:"Patents, IP and contracts", pages:[]},
     {id:"hr", name:"HR & Team Building", scope:"Recruitment, onboarding and training", pages:[]}
@@ -1364,7 +1364,7 @@ function mountRegister(root) {
         sale.left -= count;
         quantity -= count;
         lines.push({...item,sourceArticle:item.sku,id:uid(),dish:product.id,name:product.name,code,group:product.group,count,
-          price:sale.cents/100,recipe:structuredClone(product.recipe),configuration:product.configuration,bomRevision:product.bomRevision});
+          price:sale.cents/100,recipe:structuredClone(product.recipe),configuration:product.configuration,bomRevision:product.bomRevision,sourceBOM:structuredClone(product.sourceBOM || [])});
       }
       if (quantity) throw Error("Row " + (index+1) + " exceeds the confirmed quantity for " + code + ".");
     });
@@ -1416,8 +1416,79 @@ function mountRegister(root) {
     });
   }
 
+  function sheetMaterialCheck(data,sheet) {
+    const required = new Map(), available = new Map();
+    for (const line of sheet.lines) {
+      for (const [sku,qty] of Object.entries(line.recipe || {})) {
+        required.set(sku,(required.get(sku) || 0) + qty * line.count);
+      }
+    }
+    for (const batch of data.batches) {
+      if (batch.left > 0) available.set(batch.ingredient,(available.get(batch.ingredient) || 0) + batch.left);
+    }
+    return [...required].map(([sku,qty]) => {
+      const item = find(data.ingredients,sku);
+      const onHand = item ? available.get(sku) || 0 : 0;
+      return {sku,name:item?.name || sku,unit:item?.unit || "",qty,onHand,short:Math.max(0,qty-onHand)};
+    });
+  }
+
+  function productionBomPlan(data,sheet) {
+    const stages = [
+      ["Fabrication",/fabricat/i,[]],
+      ["Finishing",/paint|powder|anodi[sz]/i,[]],
+      ["Assembly",/assembl/i,[]],
+      ["Packing",/pack/i,[]]
+    ];
+    const missing = [];
+    for (const line of sheet.lines) {
+      const registered = find(data.menu,line.dish);
+      const tree = line.sourceBOM ?? (registered?.bomRevision === line.bomRevision ? registered?.sourceBOM : null);
+      if (!tree?.length) { missing.push(line.code || line.name); continue; }
+      function visit(nodes) {
+        for (const [sku,name,qty,unit,children] of nodes) {
+          visit(children || []);
+          const stage = stages.find(([,pattern]) => pattern.test(name));
+          if (!children?.length || !stage) continue;
+          stage[2].push({product:line.code || line.name,serial:line.configuration?.housing?.replace(/^Housing-/,"") || "",name,sku,parts:children});
+        }
+      }
+      visit(tree);
+    }
+    return {stages,missing};
+  }
+
+  function productionBomMarkup(data,sheet) {
+    const {stages,missing} = productionBomPlan(data,sheet);
+    return '<h3>Multi-level BOM · Production stages</h3>' +
+      stages.filter(([, , tasks]) => tasks.length).map(([label,,tasks]) =>
+        `<details open><summary><strong>${label}</strong></summary>${tasks.map(task => {
+          const rows = [];
+          function appendParts(parts,depth) {
+            for (const [sku,name,qty,unit,children] of parts) {
+              rows.push(["","", "  ".repeat(depth) + name,sku,qty,unit,""]);
+              if (children?.length && !stages.some(([,pattern]) => pattern.test(name))) appendParts(children,depth+1);
+            }
+          }
+          appendParts(task.parts,0);
+          return `<p>${esc(task.product)} · ${esc(task.name)} <small>${esc(task.sku)}</small></p>
+            ${bomMasterGrid(task.serial,{Parts:rows},true)}`;
+        }).join("")}</details>`).join("") +
+      (missing.length ? empty("Multi-level BOM missing for: " + [...new Set(missing)].join(", ") + ". Review the approved BOM before planning these stages.") : "");
+  }
+
+  function productionPurchasesPage() {
+    const requests = db.productionPurchaseRequests || [];
+    return heading("", "Production Purchases", "Drafts raised from shortages on production sheets.") +
+      (requests.length ? requests.slice().reverse().map(draft => panel("",esc(draft.ref + " · " + draft.sheetRef),
+        grid(["SKU","Material","Unit","Required","On hand at check","To purchase"],draft.lines.map(line =>
+          `<tr><th scope="row">${esc(line.sku)}</th><td>${esc(line.name)}</td><td>${esc(line.unit)}</td>
+          <td>${esc(line.qty)}</td><td>${esc(line.onHand)}</td><td>${esc(line.short)}</td></tr>`).join("")))).join("") :
+        empty("No production purchase drafts yet."));
+  }
+
   function nextReadySheet(data) {
-    return orderedDrafts(data).find(sheet => sheet.lines.length && !sheet.pending?.length && !productionReviewPending(data,sheet));
+    return orderedDrafts(data).find(sheet => sheet.lines.length && !sheet.pending?.length && !productionReviewPending(data,sheet) && !sheetMaterialCheck(data,sheet).some(row => row.short > 0));
   }
 
   function productionQueue() {
@@ -1428,10 +1499,11 @@ function mountRegister(root) {
       const order = salesOrderDetails(db,sheet);
       const reviewing = productionReviewPending(db,sheet);
       const blocked = sheet.pending?.length || !sheet.lines.length;
+      const short = sheetMaterialCheck(db,sheet).some(row => row.short > 0);
       return `<tr><td>${index+1}</td><th scope="row">${esc(order.ref)}</th><td>${esc(sheet.name)}</td>
         <td>${esc(order.route)}${sheet.kind && sheet.kind !== "Direct" ? " · " + esc(sheet.kind) : ""}</td>
         <td>${esc(order.priority)}${order.priorityReason ? "<small> · " + esc(order.priorityReason) + "</small>" : ""}</td>
-        <td>${reviewing ? "Technical mapping review" : blocked ? "Awaiting BOM match" : sheet.id === next?.id ? "Next ready" : "Ready"}</td>
+        <td>${reviewing ? "Technical mapping review" : blocked ? "Awaiting BOM match" : short ? "Awaiting materials" : sheet.id === next?.id ? "Next ready" : "Ready"}</td>
         <td>${btn("Open sheet","production-sheet",sheet.id,"mini")}</td></tr>`;
     }).join("")) : empty("No released sales orders are waiting for production.");
     const groups = [
@@ -1749,7 +1821,7 @@ function mountRegister(root) {
         `<tr><th scope="row">${esc(row[0])}</th>${row.slice(1).map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join(""));
   }
 
-  function singleLevelBomGrid(serial, sections) {
+  function bomMasterGrid(serial, sections, multiLevel = false) {
     const widths = [76,55,104,120,280,160,78,59,72];
     const columns = widths.map(width => `<col style="width:${width}px">`).join("");
     const groups = Object.entries(sections).map(([name,rows]) => {
@@ -1763,28 +1835,26 @@ function mountRegister(root) {
           <td>${esc(quantity)}</td><td class="bom-master-number">${esc(unit)}</td><td>${esc(tag)}</td>
         </tr>`).join("")}</tbody>`;
     }).join("");
-    return `<div class="bom-master-scroll" role="region" aria-label="Single-level BOM for D.${esc(serial)}" tabindex="0">
-      <table class="bom-master-grid"><colgroup>${columns}</colgroup>${groups}</table></div>`;
+    return `<div class="bom-master-scroll" role="region" aria-label="${multiLevel ? "Multi-level BOM materials" : "Single-level BOM for D." + esc(serial)}" tabindex="0">
+      <table class="bom-master-grid${multiLevel ? " bom-production-grid" : ""}"><colgroup>${columns}</colgroup>${groups}</table></div>`;
   }
 
   function showHousingBom(serial) {
     const housing = housingData?.housings[serial];
     const sections = housingBomMaster[serial] || {};
-    const single = Object.keys(sections).length ? singleLevelBomGrid(serial,sections) : "";
+    const single = Object.keys(sections).length ? bomMasterGrid(serial,sections) : "";
     modal("Bill of Materials · D." + serial,
       `<p>${esc(housing?.name || "")}</p>
       <details open><summary>Single-level BOM</summary>
-        ${single || empty("No single-level BOM is recorded for this housing.")}</details>
-      <details ${single ? "" : "open"}><summary>Multi-level BOM</summary>
-        ${housing?.tree.length ? bomTree(housing.tree) : empty("No multi-level assembly is recorded for this housing.")}</details>`);
+        ${single || empty("No single-level BOM is recorded for this housing.")}</details>`);
     $("dialog").classList.add("housing-config-dialog");
   }
 
   // Tab 03: BOM & Specifications
   function recipes() {
     const tabs = [["all","Housing Database"],["linear","Linear Database"],["application","Application-Specific"],["bom","Bill of Materials"]];
-    return heading("", "BOM", "", bomView === "bom" && canWrite ? btn("+ Add Luminaire","dish","","primary") : "") +
-      '<nav class="row nomen-view" aria-label="BOM views">' + tabs.map(([id,label]) =>
+    return heading("", "Database", "", bomView === "bom" && canWrite ? btn("+ Add Luminaire","dish","","primary") : "") +
+      '<nav class="row nomen-view" aria-label="Database views">' + tabs.map(([id,label]) =>
         `<button type="button" class="btn ${bomView === id ? "primary" : ""}" data-action="bom-view" data-id="${id}"
           aria-pressed="${bomView === id}">${label}</button>`).join("") + '</nav>' +
       (bomView === "bom" ? staffCatalog() : housingDatabaseTable());
@@ -2066,6 +2136,7 @@ function mountRegister(root) {
     else if(page === 12) screen.insertAdjacentHTML("beforeend", manufacturingTeam());
     else if(page === 13) screen.insertAdjacentHTML("beforeend", productionSheetsPage());
     else if(page === 14) screen.insertAdjacentHTML("beforeend", supplierAliasesPage());
+    else if(page === 16) screen.insertAdjacentHTML("beforeend", productionPurchasesPage());
   }
 
   // Recipe row in BOM editor
@@ -2093,13 +2164,6 @@ function mountRegister(root) {
 
   let housingData = null;
   const housingRecord = item => item?.group === "Housing" ? housingData?.housings[item.id.slice(8)] : null;
-
-  function bomTree(nodes) {
-    return `<ul class="housing-bom-tree">${nodes.map(([sku, name, qty, unit, children]) => {
-      const label = `<strong>${esc(name)}</strong> <span>${esc(sku || "SKU missing")} · ${esc(qty || "Quantity missing")} ${esc(unit)}</span>`;
-      return `<li>${children.length ? `<details open><summary>${label}</summary>${bomTree(children)}</details>` : label}</li>`;
-    }).join("")}</ul>`;
-  }
 
   function configurationTable(name, title, columns, entries, selected) {
     const rows = entries.map(([id, records]) => records.map((record, index) => {
@@ -2756,6 +2820,28 @@ function mountRegister(root) {
         form => update(data => finalizeProductionOutput(data,id,upload.items.map((_,index) => required(form,"map"+index)))),
         "Finalize production sheets");
     },
+    "production-purchase-draft": id => {
+      const sheet = find(db.productionSheets || [],id);
+      if (!sheet || !["Draft","Assigned"].includes(sheet.status)) throw Error("Open a production sheet first.");
+      const lines = sheetMaterialCheck(db,sheet).filter(line => line.short > 0);
+      if (!lines.length) throw Error("No stock shortages were found.");
+      $("dialog").close();
+      modal("Save purchase draft · " + sheet.ref, grid(["SKU","Material","Shortage","Unit"],lines.map(line =>
+        `<tr><th scope="row">${esc(line.sku)}</th><td>${esc(line.name)}</td><td>${esc(line.short)}</td><td>${esc(line.unit)}</td></tr>`).join("")),
+        async () => {
+          await update(data => {
+            const current = find(data.productionSheets || [],id);
+            if (!current || !["Draft","Assigned"].includes(current.status)) throw Error("This production sheet is no longer open.");
+            const shortage = sheetMaterialCheck(data,current).filter(line => line.short > 0);
+            if (!shortage.length) throw Error("Stock now covers the production sheet.");
+            const drafts = data.productionPurchaseRequests ||= [];
+            const existing = drafts.find(row => row.sheetId === id);
+            if (existing) existing.lines = shortage;
+            else drafts.push({ref:"PR-" + String(drafts.length+1).padStart(4,"0"),sheetId:id,sheetRef:current.ref,lines:shortage});
+          });
+          return () => actions["production-sheet"](id);
+        },"Save draft for Purchase");
+    },
     "production-sheet": id => {
       const sheet = find(db.productionSheets || [],id);
       if (!sheet) return;
@@ -2764,24 +2850,23 @@ function mountRegister(root) {
       const next = nextReadySheet(db);
       const canAssign = canWrite && sheet.id === next?.id && benches.length;
       const order = salesOrderDetails(db,sheet);
-      const requiredParts = new Map();
-      for (const line of sheet.lines) {
-        for (const [sku, quantity] of Object.entries(line.recipe || {})) {
-          requiredParts.set(sku,(requiredParts.get(sku) || 0) + quantity * line.count);
-        }
-      }
+      const materials = sheetMaterialCheck(db,sheet);
+      const canDraftPurchase = canWrite && ["Draft","Assigned"].includes(sheet.status) && materials.some(row => row.short > 0);
       const rows = sheet.lines.map(line => `<tr><td>${esc(line.code || line.name)}<br>${sourceLocation(line)}</td><td>${cutLength(line)}</td><td>${esc(line.count)}</td><td>${esc(line.bomRevision || "—")}</td>
         <td>${Object.entries(line.recipe || {}).map(([sku,qty]) => `${esc(sku)} × ${esc(qty * line.count)}`).join("<br>")}</td></tr>`).join("");
       modal(sheet.ref + " · " + sheet.name, `<p>${esc(order.ref)} · ${esc(order.route)} · ${esc(order.priority)}</p><p>${esc(sheet.status)}${sheet.bench ? " · " + esc(sheet.bench) : ""}</p>` +
         grid(["Product / circuit","Cut length","Quantity","BOM revision","Parts required"],rows) +
-        (requiredParts.size ? "<h3>Total parts required</h3>" +
-          grid(["Stockroom SKU","Quantity","Unit"],[...requiredParts].map(([sku,qty]) =>
-            `<tr><th scope="row">${esc(sku)}</th><td>${esc(qty)}</td><td>${esc(find(db.ingredients,sku)?.unit || "—")}</td></tr>`).join("")) : "") +
+        (page === 13 ? productionBomMarkup(db,sheet) : "") +
+        (materials.length ? "<h3>Stock check · Approved BOM</h3>" +
+          grid(["Stockroom SKU","Required","On hand","Short","Unit"],materials.map(row =>
+            `<tr><th scope="row">${esc(row.sku)}</th><td>${esc(row.qty)}</td><td>${esc(row.onHand)}</td><td>${esc(row.short)}</td><td>${esc(row.unit)}</td></tr>`).join("")) : "") +
+        (canDraftPurchase ? btn((db.productionPurchaseRequests || []).some(row => row.sheetId === id) ?
+          "Update purchase draft" : "Raise purchase draft","production-purchase-draft",id) : "") +
         (pending.length ? "<h3>SKUs awaiting a unique product with an approved BOM</h3><ul>" +
           pending.map(item => `<li>${esc(item.sku)} × ${esc(item.count)} · ${cutLength(item)} · ${sourceLocation(item)}</li>`).join("") + "</ul>" +
           (canWrite ? btn("Match products again","production-sheet-match",id) : "") : "") +
         (sheet.status === "Draft" && sheet.lines.length && !pending.length && canWrite ?
-          productionReviewPending(db,sheet) ? empty("Finalize the technical mapping in Production Sheets first.") : sheet.id !== next?.id ? empty("Assign the earlier ready sheet in the queue first.") : benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id, stationLabel(db, bench)]),benches[0].id)
+          productionReviewPending(db,sheet) ? empty("Finalize the technical mapping in Production Sheets first.") : canDraftPurchase ? empty("Resolve material shortages before assigning a workbench.") : sheet.id !== next?.id ? empty("Assign the earlier ready sheet in the queue first.") : benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id, stationLabel(db, bench)]),benches[0].id)
             : empty("Create or free a workbench before sending this sheet.") : ""),
         canAssign ? form => update(data => {
           const current = nextReadySheet(data);
@@ -2810,7 +2895,7 @@ function mountRegister(root) {
           if (matches.length !== 1) return true;
           const product = matches[0];
           sheet.lines.push({id:uid(),dish:product.id,name:product.name,code:item.sku,group:product.group,count:item.count,
-            price:item.cents / 100,recipe:structuredClone(product.recipe),configuration:product.configuration,bomRevision:product.bomRevision,
+            price:item.cents / 100,recipe:structuredClone(product.recipe),configuration:product.configuration,bomRevision:product.bomRevision,sourceBOM:structuredClone(product.sourceBOM || []),
             lengthMm:item.lengthMm,circuit:item.circuit,floor:item.floor,zone:item.zone});
           return false;
         });
@@ -3092,7 +3177,6 @@ function mountRegister(root) {
       const parts = Object.entries(item.recipe || {});
       modal(item.name, `<p>${esc(item.code || item.fam || "")} · ${money(item.price)}</p>
         <p>${esc(Object.values(item.specs || {}).join(" · ") || item.description || "")}</p>
-        ${item.sourceBOM?.length ? `<details><summary>Housing BOM · source reference</summary>${bomTree(item.sourceBOM)}</details>` : ""}
         ${parts.length ? `<h3>Bill of materials</h3><ul>${parts.map(([sku, qty]) =>
           `<li>${esc(find(db.ingredients,sku)?.name || sku)} · ${esc(qty)}</li>`).join("")}</ul>` : "<p>BOM required.</p>"}`);
     },
@@ -3396,7 +3480,7 @@ function mountRegister(root) {
         <fieldset><legend class="draft"><span class="section-numeral">02 /</span> Bill of Materials per Unit (BOM)</legend>
         ${configuration ? `<p><strong>${esc(configuration.code)}</strong></p>
         <label><input class="configuration-review" name="configuration-reviewed" type="checkbox" required> I verified the configuration and every stock part and quantity for this build.</label>
-        ${setup.sourceTree?.length ? `<details><summary>Source BOM for review</summary>${bomTree(setup.sourceTree)}</details>` : ""}` : ""}
+` : ""}
         <p class="schedule-note">Specify the quantity of each raw component required to build one finished luminaire.</p><div id="recipe"></div>
         <p class="add-line">${btn("+ Component Line", "recipe-add", "", "mini")}</p></fieldset>`,
         f => update(d => {
@@ -4346,6 +4430,8 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
 .retina-inventory-pos .bom-master-grid .bom-master-description{text-align:left}
 .retina-inventory-pos .bom-master-grid .bom-master-sku{font-weight:700}
 .retina-inventory-pos .bom-master-grid .bom-master-reference{background:#d9d9d9}
+
+.retina-inventory-pos .bom-production-grid th{background:var(--blue);color:var(--ink)}
 
 `;
 document.getElementById('app-styles').textContent = styles;

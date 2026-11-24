@@ -141,7 +141,7 @@ export default async function handler(req,res) {
       }
       if(result.state && !manufacturing) {
         const d=result.state;
-        const stockView=purchasing ? {ingredients:d.ingredients,batches:d.batches,activity:d.activity} : {};
+        const stockView=purchasing ? {ingredients:d.ingredients,batches:d.batches,activity:d.activity,productionPurchaseRequests:d.productionPurchaseRequests || []} : {};
         const salesView=sales ? {salesProjects:(d.tables||[]).filter(row=>row.recordType==='project'||['Commercial','Residential','Hospitality','Other project'].includes(row.kind)).map(({id,name,address})=>({id,name,address})),billingProducts:(d.menu||[]).map(({id,code,name,price,configuration})=>({id,code,name,price,configuration})),sales:d.sales,estimates:d.estimates||[],invoices:d.invoices||[]} : {};
         result.state={name:d.name,currency:d.currency,tables:[],ingredients:[],batches:[],activity:[],menu:[],kots:[],sales:[],...stockView,...salesView};
       }
