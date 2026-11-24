@@ -1302,16 +1302,49 @@ function mountRegister(root) {
     </figure>${legacy.length ? '<h3>Other workbenches</h3>' + areaTables(legacy) : ""}`;
   }
 
+  function salesOrderDetails(data, sheet) {
+    const estimate = find(data.estimates || [], sheet.estimateId);
+    return estimate?.salesOrder || {
+      ref: sheet.salesOrderRef || estimate?.ref || sheet.ref,
+      releasedAt: estimate?.payment?.receivedAt || sheet.createdAt || "",
+      priority: "Standard", route: estimate?.source?.projectId ? "Enlighten technical table" : estimate ? "Direct BOQ" : "Existing production sheet"
+    };
+  }
+
+  function orderedDrafts(data) {
+    const rank = {Emergency:0,Urgent:1,Standard:2};
+    return (data.productionSheets || []).filter(sheet => sheet.status === "Draft").sort((a,b) => {
+      const left = salesOrderDetails(data,a), right = salesOrderDetails(data,b);
+      return rank[left.priority] - rank[right.priority] ||
+        (left.releasedAt || "9999").localeCompare(right.releasedAt || "9999") ||
+        left.ref.localeCompare(right.ref);
+    });
+  }
+
+  function nextReadySheet(data) {
+    return orderedDrafts(data).find(sheet => sheet.lines.length && !sheet.pending?.length);
+  }
+
   function productionQueue() {
     const sheets = db.productionSheets || [];
+    const waiting = orderedDrafts(db);
+    const next = nextReadySheet(db);
+    const queue = waiting.length ? grid(["Queue","Sales order","Project","Production route","Priority","Status",""], waiting.map((sheet,index) => {
+      const order = salesOrderDetails(db,sheet);
+      const blocked = sheet.pending?.length || !sheet.lines.length;
+      return `<tr><td>${index+1}</td><th scope="row">${esc(order.ref)}</th><td>${esc(sheet.name)}</td>
+        <td>${esc(order.route)}${sheet.kind && sheet.kind !== "Direct" ? " · " + esc(sheet.kind) : ""}</td>
+        <td>${esc(order.priority)}${order.priorityReason ? "<small> · " + esc(order.priorityReason) + "</small>" : ""}</td>
+        <td>${blocked ? "Awaiting BOM match" : sheet.id === next?.id ? "Next ready" : "Ready"}</td>
+        <td>${btn("Open sheet","production-sheet",sheet.id,"mini")}</td></tr>`;
+    }).join("")) : empty("No released sales orders are waiting for production.");
     const groups = [
       ["Under Production", sheets.filter(sheet => sheet.status === "Assigned"), "No sheets assigned to production."],
-      ["Up for Production", sheets.filter(sheet => sheet.status === "Draft"), "No sheets waiting for production."],
       ["Completed Tasks", sheets.filter(sheet => ["Built", "Dispatched"].includes(sheet.status)), "No completed production sheets."]
     ];
-    return '<div class="production-queue">' + groups.map(([title, rows, noRows]) => panel("", title,
+    return panel("", "Up for Production", queue) + '<div class="production-queue">' + groups.map(([title, rows, noRows]) => panel("", title,
       rows.length ? '<ul>' + rows.map(sheet => `<li><strong>${esc(sheet.name)}</strong>
-        <small>${esc([sheet.ref, sheet.bench, sheet.status === "Built" ? "Ready to dispatch" : sheet.status === "Dispatched" ? "Dispatched" : sheet.pending?.length ? "Product matches pending" : ""].filter(Boolean).join(" · "))}</small>
+        <small>${esc([salesOrderDetails(db,sheet).ref, sheet.ref, sheet.bench, sheet.status === "Built" ? "Ready to dispatch" : sheet.status === "Dispatched" ? "Dispatched" : ""].filter(Boolean).join(" · "))}</small>
         ${btn("Open sheet", "production-sheet", sheet.id, "mini")}</li>`).join("") + '</ul>' : empty(noRows))).join("") + '</div>';
   }
 
@@ -1407,15 +1440,13 @@ function mountRegister(root) {
         ${shortage ? `<p class="error"><b>Component shortage:</b> ${esc(shortage)}</p>` : current.builtAt
           ? btn("Dispatch order", "checkout", current.id, "primary")
           : manufacturingStatus(current) === "In production" ? btn("Mark built", "mark-built", current.id, "primary") : ""}` :
-        empty("Send a production sheet from Projects to this workbench.") + kotControls(current));
+        empty("Assign the next ready sheet from Up for Production.") + kotControls(current));
 
-    return heading("", "Production", "Review the production queue and select a station or project.",
-      canWrite ? btn("+ Add Project", "project-new", "", "primary") : "") +
+    return heading("", "Production", "Released sales orders run oldest first within each priority. Emergency and urgent orders move ahead of standard work.") +
       productionQueue() +
       `<div class="split"><div>${panel("", "Workbenches", plan, "plan")}${panel("", "Projects", projectPlan, "plan")}</div>
       ${panel("01C", esc(project?.name || current?.name || "Current Station Check"),
-        project ? projectOrder(project) + (current ? "<h3>Existing assembly job</h3>" + check : "") : check)}</div>` +
-      panel("01B","Select Products",staffCatalog({ordering:true,canOrder:canWrite && !!project && !current}));
+        project ? projectOrder(project) + (current ? "<h3>Existing assembly job</h3>" + check : "") : check)}</div>`;
   }
 
   // Storage Map
@@ -1712,7 +1743,7 @@ function mountRegister(root) {
         <td>${s.kotIds?.length ? s.kotIds.map(id => {
           const t = find(db.kots, id);
           return t ? btn(t.ref, "kot-view", id, "mini") : "";
-        }).join(" ") : "—"}</td><td>${s.jobType === "Direct stock dispatch" ? btn("Delivery challan","direct-challan",s.id,"mini") : invoices.has(s.id) ? btn("Draft invoice","dispatch-invoice",invoices.get(s.id).id,"mini") : "—"}</td></tr>`;
+        }).join(" ") : "—"}</td><td>${s.jobType === "Direct stock dispatch" ? btn("Delivery challan","direct-challan",s.id,"mini") : invoices.has(s.id) ? btn(invoices.get(s.id).status === "Issued" ? "View invoice" : "Draft invoice","dispatch-invoice",invoices.get(s.id).id,"mini") : "—"}</td></tr>`;
     }).join("");
 
     return heading("06 / Dispatches & Job history", "Dispatches log", "Historical log of assembled luminaires dispatched to projects, along with deducted component records.") +
@@ -2044,14 +2075,13 @@ function mountRegister(root) {
     const recentDispatches = db.sales.filter(dispatch => dispatch.projectId === project.id && dispatch.jobType === "Direct stock dispatch").slice(-5).reverse();
     return "<h3>Direct stock dispatch</h3>" + (stockLines.length ? grid(["Item","Circuit","Quantity",""],stockLines.map(line =>
       `<tr><td>${esc(line.name)}<small>${esc(line.code)}</small></td><td>${esc(line.circuit)}</td><td>${esc(line.count)}</td>
-      <td>${canWrite ? btn("Remove","direct-remove",line.id,"mini") : ""}</td></tr>`).join("")) : empty("Add spare parts or finished lights from stock.")) +
-      (canWrite ? btn("+ Add stock item","direct-add",project.id) +
-        (stockLines.length ? btn("Dispatch stock","direct-dispatch",project.id,"primary") : "") : "") +
+      <td>${canWrite ? btn("Remove","direct-remove",line.id,"mini") : ""}</td></tr>`).join("")) : empty("No stock dispatch is staged.")) +
+      (canWrite && stockLines.length ? btn("Dispatch stock","direct-dispatch",project.id,"primary") : "") +
       (recentDispatches.length ? "<h3>Recent stock dispatches</h3>" + recentDispatches.map(dispatch =>
         btn(dispatch.ref,"direct-challan",dispatch.id,"mini")).join(" ") : "") +
       "<h3>Production sheets</h3>" + (sheetList || empty("No production sheets yet.")) +
       (lines && !project.checkId && !project.kotSent && !project.builtAt ? "<h3>Products staged for production</h3>" + lines +
-        (canWrite ? btn("Create Production Sheet","production-sheet-create",project.id,"primary") : "") : "");
+        empty("Release a confirmed sales order to create production sheets.") : "");
   }
 
   function dispatchProjectStock(data, projectId, reference) {
@@ -2189,13 +2219,14 @@ function mountRegister(root) {
     const format = (html, fields) => html.replace(/\{\{(\w+)\}\}/g, (_, field) => esc(fields[field] ?? ""));
     const stamp = doc.invoice?.createdAt || doc.issued?.issuedAt;
     const date = stamp ? new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata"}).format(new Date(stamp)) : "";
-    const title = doc.invoice ? "DRAFT INVOICE · " + doc.title + " · " + doc.invoice.id :
+    const title = doc.invoice ? (doc.invoice.status === "Issued" ? "INVOICE · " : "DRAFT INVOICE · ") + doc.title + " · " + doc.invoice.id :
       "BILL OF QUANTITIES FOR LIGHT FITTINGS · " + doc.title + " · " + doc.estimate.ref + " · " +
       (doc.issued.issuedAt ? estimateVersion(doc.issued) : "DRAFT");
     const lines = doc.items.map(item => format(template.line,{0:item.circuit,1:(item.name || item.sourceArticle || item.sku) + (item.lengthMm ? "\n" + item.lengthMm + " mm" : ""),
       4:item.sku,5:item.configuration?.led ? "LED " + item.configuration.led : "",
       14:item.configuration?.driver,16:item.count.toFixed(2),19:money(item.cents / 100),20:money(item.count * item.cents / 100)})).join("");
-    const footer = doc.invoice ? `<div style="padding:16px;font:14px Arial"><p>Dispatch ${esc(doc.invoice.dispatchRef)}</p>
+    const footer = doc.invoice ? `<div style="padding:16px;font:14px Arial"><p>Dispatch ${esc(doc.invoice.dispatchId)} · ${esc(doc.invoice.dispatchRef)}</p>
+      ${doc.invoice.salesOrderRef ? `<p>Sales order ${esc(doc.invoice.salesOrderRef)}</p>` : ""}
       <p>${esc(doc.invoice.note || "")}</p><p>Advance applied · ${esc(money(doc.invoice.advanceCents / 100))}</p><p>Balance before tax · ${esc(money(invoiceBalance(doc.invoice) / 100))}</p></div>` : "";
     return format(template.head,{TITLE:title.toUpperCase(),DATE:date}).replace(/<div class="toolbar">.*?<\/div>/,"") + lines +
       format(template.tail,{TOTAL:money(estimateTotal(doc.items) / 100)}) +
@@ -2232,12 +2263,12 @@ function mountRegister(root) {
     const label = invoices ? "Invoice" : "Estimate";
     const actions = doc ? btn("Edit " + label,invoices ? "invoice-edit" : "estimate-edit",key) +
       btn("Send " + label,"billing-send",key) + (!invoices ? btn(linked ? "View Invoice" : "Convert to Invoice","billing-convert",key) : "") +
-      btn("Print / Save PDF","billing-print") + btn("Record Payment","billing-payment",key) : "";
+      btn("Print / Save PDF","billing-print") + (invoices || !doc.estimate.payment ? btn(invoices ? "Record Payment" : "Confirm & Release Sales Order","billing-payment",key) : "") : "";
     const history = doc?.estimate?.versions?.length > 1 ? doc.estimate.versions.map(version => btn(estimateVersion(version),"billing-select",doc.id + ":" + version.revision,doc.issued === version ? "primary" : "")).join("") : "";
-    const status = doc?.estimate?.payment ? "Advance recorded" : doc?.invoice ? doc.invoice.status || "Draft" : latest ? "Issued" : "Draft";
+    const status = doc?.estimate?.payment ? (doc.estimate.salesOrder ? "Released · " + doc.estimate.salesOrder.ref : "Advance recorded") : doc?.invoice ? doc.invoice.status || "Draft" : latest ? "Issued" : "Draft";
     return `<div class="billing-heading">` + heading("",invoices ? "Invoices" : "Estimates","",invoices ? "" :
       btn("Import Enlighten output","estimate-import","","primary")) + "</div>" +
-      `<section class="billing-workspace"><div class="billing-detail">${doc ? `<header><strong>${esc(doc.title)}</strong><small>${esc(doc.invoice?.id || doc.estimate.ref)} · ${status}</small></header>
+      `<section class="billing-workspace"><div class="billing-detail">${doc ? `<header><strong>${esc(doc.title)}</strong><small>${esc(doc.invoice?.id || doc.estimate.ref)} · ${esc(status)}</small></header>
       <nav class="row billing-toolbar" aria-label="${label} actions">${actions}</nav>
       <div class="billing-paper"><iframe id="billing-preview" title="${label} document" srcdoc="${esc(documentHTML(doc))}"></iframe></div>` : empty("No " + label.toLowerCase() + "s yet.")}</div>
       ${list ? `<nav class="billing-tabs" aria-label="${label} list">${list}${history}</nav>` : ""}</section>`;
@@ -2437,6 +2468,9 @@ function mountRegister(root) {
       if (!sheet) return;
       const benches = openStations(db);
       const pending = sheet.pending || [];
+      const next = nextReadySheet(db);
+      const canAssign = canWrite && sheet.id === next?.id && benches.length;
+      const order = salesOrderDetails(db,sheet);
       const requiredParts = new Map();
       for (const line of sheet.lines) {
         for (const [sku, quantity] of Object.entries(line.recipe || {})) {
@@ -2445,7 +2479,7 @@ function mountRegister(root) {
       }
       const rows = sheet.lines.map(line => `<tr><td>${esc(line.code || line.name)}<br>${sourceLocation(line)}</td><td>${cutLength(line)}</td><td>${esc(line.count)}</td><td>${esc(line.bomRevision || "—")}</td>
         <td>${Object.entries(line.recipe || {}).map(([sku,qty]) => `${esc(sku)} × ${esc(qty * line.count)}`).join("<br>")}</td></tr>`).join("");
-      modal(sheet.ref + " · " + sheet.name, `<p>${esc(sheet.status)}${sheet.bench ? " · " + esc(sheet.bench) : ""}</p>` +
+      modal(sheet.ref + " · " + sheet.name, `<p>${esc(order.ref)} · ${esc(order.route)} · ${esc(order.priority)}</p><p>${esc(sheet.status)}${sheet.bench ? " · " + esc(sheet.bench) : ""}</p>` +
         grid(["Product / circuit","Cut length","Quantity","BOM revision","Parts required"],rows) +
         (requiredParts.size ? "<h3>Total parts required</h3>" +
           grid(["Stockroom SKU","Quantity","Unit"],[...requiredParts].map(([sku,qty]) =>
@@ -2453,11 +2487,12 @@ function mountRegister(root) {
         (pending.length ? "<h3>SKUs awaiting a unique product with an approved BOM</h3><ul>" +
           pending.map(item => `<li>${esc(item.sku)} × ${esc(item.count)} · ${cutLength(item)} · ${sourceLocation(item)}</li>`).join("") + "</ul>" +
           (canWrite ? btn("Match products again","production-sheet-match",id) : "") : "") +
-        (sheet.status === "Draft" && !pending.length ?
-          benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id, stationLabel(db, bench)]),benches[0].id)
+        (sheet.status === "Draft" && sheet.lines.length && !pending.length && canWrite ?
+          sheet.id !== next?.id ? empty("Assign the earlier ready sheet in the queue first.") : benches.length ? options("bench","Send to workbench",benches.map(bench => [bench.id, stationLabel(db, bench)]),benches[0].id)
             : empty("Create or free a workbench before sending this sheet.") : ""),
-        canWrite && sheet.status === "Draft" && sheet.lines.length && !pending.length && benches.length ? form => update(data => {
-          const current = find(data.productionSheets,id);
+        canAssign ? form => update(data => {
+          const current = nextReadySheet(data);
+          if (current?.id !== id) throw Error("Assign the next ready sheet in the queue first.");
           const station = find(openStations(data),required(form,"bench"));
           const bench = station && (find(data.tables, station.id) || station);
           if (!bench || isProject(bench) || bench.lines.length || bench.productionSheetId || current.status !== "Draft" || current.pending?.length)
@@ -2611,10 +2646,13 @@ function mountRegister(root) {
       if (invoice && invoiceBalance(invoice) <= 0) throw Error("This invoice has no outstanding balance.");
       if (estimate && (!issued.issuedAt || issued !== estimate.versions.at(-1) || estimate.payment))
         throw Error("Select the current issued estimate with an outstanding advance.");
-      modal(invoice ? "Record invoice payment" : "Record advance & release production",
-        input("reference","Payment reference") + input("paid","Amount received","","number","required min='0.01' step='0.01'"),
+      modal(invoice ? "Record invoice payment" : "Confirm & Release Sales Order",
+        input("reference","Payment reference") + input("paid","Amount received","","number","required min='0.01' step='0.01'") +
+        (invoice ? "" : options("priority","Production priority",values(["Standard","Urgent","Emergency"]),"Standard") +
+          input("priorityReason","Reason for urgent or emergency work","","text","maxlength='120'")),
         form => saveEstimate(invoice ? "invoicePayment" : "estimatePayment",{
-          id:invoice?.id || estimate.id,revision:issued?.revision,reference:required(form,"reference"),cents:number(read(form,"paid"),100)}));
+          id:invoice?.id || estimate.id,revision:issued?.revision,reference:required(form,"reference"),cents:number(read(form,"paid"),100),
+          priority:read(form,"priority"),priorityReason:read(form,"priorityReason")}));
     },
     "billing-send": key => {
       const doc = selectedDocument(key);
@@ -2635,7 +2673,14 @@ function mountRegister(root) {
         `<a class="btn" href="mailto:?subject=${encodeURIComponent(doc.label + " " + ref)}&amp;body=${encodeURIComponent(body)}">Open email draft</a>`);
     },
     "billing-print": () => $("billing-preview").contentWindow.print(),
-    "dispatch-invoice": id => actions["billing-select"](id + ":invoice"),
+    "dispatch-invoice": id => {
+      const doc = selectedDocument(id + ":invoice");
+      if (!doc) throw Error("Invoice not found.");
+      modal(doc.invoice.id, `<iframe class="dispatch-invoice-preview" id="dispatch-invoice-preview"
+        title="Dispatch invoice" srcdoc="${esc(documentHTML(doc))}"></iframe>` +
+        btn("Print / Save PDF","dispatch-invoice-print"));
+    },
+    "dispatch-invoice-print": () => $("dispatch-invoice-preview").contentWindow.print(),
 
     "print-document": () => {
       let area = $("document-print-area");
@@ -2899,12 +2944,15 @@ function mountRegister(root) {
     // Dispatch closes the bench and records the BOM stock movements.
     checkout: id => {
       const table = find(db.tables, id);
-      modal("Dispatch Order",
+      const salesSheet = find(db.productionSheets || [],table?.productionSheetId);
+      const salesDispatch = Boolean(salesSheet?.estimateId);
+      modal(salesDispatch ? "Dispatch Order & Issue Invoice" : "Dispatch Order",
         `<p><b>${esc(table.name)} · ${esc(ticketType(table))}${table.jobType === "Mock-up" ? "" : " · " + money(total(table.lines))}</b></p>
-        <p>Confirming records the dispatch, deducts the BOM parts from stock, and frees this workbench.</p>` +
-        options("method", "Dispatch Type / Document", values(table.jobType === "Mock-up" ? ["Client Sample", "Internal Project"] : ["Delivery Challan", "Tax Invoice", "Internal Project"]), table.jobType === "Mock-up" ? "Client Sample" : "Delivery Challan") +
+        <p>Confirming records the dispatch, deducts the BOM parts from stock, and frees this workbench.${salesDispatch ? " The invoice is issued in the same step." : ""}</p>` +
+        (salesDispatch ? "" : options("method", "Dispatch Type / Document", values(table.jobType === "Mock-up" ? ["Client Sample", "Internal Project"] : ["Delivery Challan", "Tax Invoice", "Internal Project"]), table.jobType === "Mock-up" ? "Client Sample" : "Delivery Challan")) +
         input("reference", "Dispatch / Project Reference", table.jobReference || "DISP-" + String(db.sales.length + 1).padStart(4, "0")),
         async f => {
+          let issuedInvoiceId;
           await update(d => {
             const t = find(d.tables, id);
             if(!t?.builtAt) throw Error("Mark this order built before dispatch.");
@@ -2912,6 +2960,11 @@ function mountRegister(root) {
             const uses = allocate(d, t.lines, day());
             const saleId = "DISP-" + String(d.sales.length + 1).padStart(4, "0");
             const ref = read(f, "reference") || saleId;
+            const sheet = find(d.productionSheets || [],t.productionSheetId);
+            const estimate = find(d.estimates || [],sheet?.estimateId);
+            const issued = Boolean(sheet?.estimateId);
+            if (issued && !estimate?.payment) throw Error("The confirmed Sales Order could not be verified.");
+            const method = issued ? "Invoice" : required(f, "method");
 
             const stock = uses.map(({ item, batch, used }) => {
               batch.left -= used;
@@ -2923,7 +2976,7 @@ function mountRegister(root) {
               id: saleId,
               date: day(),
               currency: d.currency,
-              method: required(f, "method"),
+              method,
               builtAt: t.builtAt,
               ref,
               table: t.name,
@@ -2936,18 +2989,20 @@ function mountRegister(root) {
               kotIds: d.kots.filter(ticket => ticket.tableId === t.id && ticket.checkId === t.checkId).map(t => t.id)
             });
 
-            const sheet = find(d.productionSheets || [],t.productionSheetId);
             if (sheet) { sheet.status = "Dispatched"; sheet.dispatchRef = ref; }
-            if (t.jobType !== "Mock-up" && required(f,"method") !== "Internal Project") {
+            if (issued || (t.jobType !== "Mock-up" && method !== "Internal Project")) {
               d.invoices ||= [];
-              const estimate = find(d.estimates || [],sheet?.estimateId);
               const subtotalCents = t.lines.reduce((amount,line) => amount + Math.round(line.price * 100) * line.count,0);
               const applied = estimate ? d.invoices.filter(invoice => invoice.estimateId === estimate.id)
                 .reduce((amount,invoice) => amount + invoice.advanceCents,0) : 0;
-              d.invoices.push({id:"INV-" + saleId,dispatchId:saleId,dispatchRef:ref,project:sheet?.name || t.name,
+              const invoiceId = "INV-" + saleId;
+              const createdAt = new Date().toISOString();
+              const salesOrderRef = estimate?.salesOrder?.ref || sheet?.salesOrderRef;
+              d.invoices.push({id:invoiceId,dispatchId:saleId,dispatchRef:ref,salesOrderRef,project:sheet?.name || t.name,
                 issuedFromRevision:sheet?.estimateRevision,estimateId:estimate?.id,subtotalCents,
                 advanceCents:Math.min(subtotalCents,Math.max(0,(estimate?.payment?.cents || 0) - applied)),
-                status:"Draft",createdAt:new Date().toISOString(),lines:structuredClone(t.lines)});
+                status:issued ? "Issued" : "Draft",createdAt,issuedAt:issued ? createdAt : undefined,lines:structuredClone(t.lines)});
+              if (issued) issuedInvoiceId = invoiceId;
             }
             delete t.productionSheetId;
             delete t.kotSent;
@@ -2957,8 +3012,9 @@ function mountRegister(root) {
             delete t.jobReference;
             t.lines = [];
           });
-          note("Order dispatched and stock updated.");
-        }, "Confirm dispatch");
+          note(issuedInvoiceId ? "Order dispatched and invoice issued." : "Order dispatched and stock updated.");
+          if (issuedInvoiceId) return () => actions["dispatch-invoice"](issuedInvoiceId);
+        }, salesDispatch ? "Confirm dispatch & issue invoice" : "Confirm dispatch");
     },
 
     // Component Edit & Add
@@ -3955,7 +4011,7 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
 }
 
 .production-queue,.station-slots{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}
-.production-queue{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:14px}
+.production-queue{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:14px}
 .production-queue .panel{min-width:0;margin:0}
 .production-queue ul{list-style:none;margin:0;padding:0}
 .production-queue li{display:grid;gap:4px;padding:8px 0;border-bottom:1px solid var(--soft)}
@@ -3976,6 +4032,8 @@ dialog.housing-config-dialog{width:min(1060px,calc(100% - 24px));max-width:none}
 .manufacturing-attendance small{color:var(--muted)}
 .manufacturing-attendance .row{align-items:end}
 .manufacturing-attendance .draft{color:var(--muted)}
+
+.dispatch-invoice-preview{display:block;width:100%;height:55vh;border:1px solid var(--rule);background:white}
 
 `;
 document.getElementById('app-styles').textContent = styles;

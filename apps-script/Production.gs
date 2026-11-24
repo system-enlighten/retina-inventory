@@ -185,7 +185,15 @@ function retinaEstimateMutation_(state, input) {
   var total = issued.items.reduce(function(sum,item) { return sum + item.count * item.cents; },0);
   if (!reference || reference.length > 100 || !Number.isSafeInteger(data.cents) || data.cents < 1 || data.cents > total)
     throw Error('Enter a reference and an advance between zero and the issued estimate total.');
+  var priority = data.priority || 'Standard';
+  if (['Standard','Urgent','Emergency'].indexOf(priority) === -1) throw Error('Select a valid production priority.');
+  var priorityReason = String(data.priorityReason || '').trim();
+  if (priorityReason.length > 120 || (priority !== 'Standard' && !priorityReason))
+    throw Error('Enter a priority reason of up to 120 characters.');
   var now = new Date().toISOString();
+  var route = issued.source.projectId || issued.source.technicalVersion ? 'Enlighten technical table' : 'Direct BOQ';
+  var order = {ref:existing.ref.replace(/^EST-/, 'SO-'),releasedAt:now,priority:priority,
+    priorityReason:priority === 'Standard' ? '' : priorityReason,route:route,estimateRevision:issued.revision};
   var project = issued.source.localProjectId && state.tables.find(function(row) { return row.id === issued.source.localProjectId; });
   if (!project && issued.source.projectId) project = state.tables.find(function(row) {
     return row.recordType === 'project' && row.enlightenProjectId === issued.source.projectId;
@@ -196,9 +204,9 @@ function retinaEstimateMutation_(state, input) {
     state.tables.push(project);
   }
   state.productionSheets = state.productionSheets || [];
-  ['Basic','Linear'].forEach(function(kind) {
+  (route === 'Direct BOQ' ? ['Direct'] : ['Basic','Linear']).forEach(function(kind) {
     var lines = [], pending = [];
-    issued.items.filter(function(item) { return item.kind === kind; }).forEach(function(item) {
+    issued.items.filter(function(item) { return kind === 'Direct' || item.kind === kind; }).forEach(function(item) {
       var matches = state.menu.filter(function(product) {
         return String(product.code || '').trim().toUpperCase() === item.sku && Object.keys(product.recipe || {}).length &&
           (!item.lengthMm || product.linearLengthMm === item.lengthMm) &&
@@ -214,8 +222,9 @@ function retinaEstimateMutation_(state, input) {
     });
     if (!lines.length && !pending.length) return;
     state.productionSheets.push({id:Utilities.getUuid(),projectId:project.id,name:project.name,ref:existing.ref + '-R' + issued.revision + '-' + kind.toUpperCase(),
-      estimateId:existing.id,estimateRevision:issued.revision,kind:kind,lines:lines,pending:pending,status:'Draft',createdAt:now,paymentRequired:true});
+      estimateId:existing.id,estimateRevision:issued.revision,salesOrderRef:order.ref,kind:kind,lines:lines,pending:pending,status:'Draft',createdAt:now,paymentRequired:true});
   });
+  existing.salesOrder = order;
   existing.payment = {reference:reference,cents:data.cents,receivedAt:now,revision:issued.revision};
   return existing;
 }
