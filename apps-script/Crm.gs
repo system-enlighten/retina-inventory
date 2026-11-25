@@ -16,7 +16,7 @@ function retinaCrm_(input) {
     function timeline(lead,type,note) { lead.history.push({type:type,note:note,at:now,by:input.email}); }
     var result;
     if (change.type === 'lead') {
-      var fields = ['name','area','address','projectType','siteStage','contact','phone','source','owner','notes','accountId'];
+      var fields = ['name','area','houseNumber','address','projectType','siteStage','contact','phone','source','owner','notes','accountId'];
       var values = {};
       fields.forEach(function(key){ values[key] = clean(change[key], key === 'notes' ? 2000 : 250); });
       if (!values.name) throw Error('Enter the project or site name.');

@@ -112,6 +112,23 @@ export default async function handler(req,res) {
       if (headers.length !== 8) return res.status(502).json({error:'Supplier Master headers could not be read.'});
       return res.json({ok:true,headers,rows:data.filter(row => row.some(value => String(value ?? '').trim()))});
     }
+    if (action === 'crmLocation') {
+      if (!canSee('sales')) return res.status(403).json({error:'Sales access is required.'});
+      const {latitude,longitude}=req.body;
+      if (!Number.isFinite(latitude) || Math.abs(latitude)>90 || !Number.isFinite(longitude) || Math.abs(longitude)>180)
+        return res.status(400).json({error:'Invalid site coordinates.'});
+      const key=process.env.RETINA_GEOCODING_KEY;
+      if (!key) return res.status(503).json({error:'Automatic area lookup is unavailable.'});
+      const params=new URLSearchParams({latlng:[latitude,longitude].join(','),key,language:'en'});
+      const response=await fetch('https://maps.googleapis.com/maps/api/geocode/json?'+params,{signal:AbortSignal.timeout(5000)}).catch(()=>null);
+      const result=response?.ok ? await response.json().catch(()=>null) : null;
+      if (result?.status==='ZERO_RESULTS') return res.json({ok:true,area:''});
+      if (result?.status!=='OK') return res.status(502).json({error:'Automatic area lookup is unavailable.'});
+      const components=result.results.flatMap(item=>item.address_components || []);
+      const area=['sublocality_level_1','neighborhood','sublocality','locality','administrative_area_level_3']
+        .map(type=>components.find(component=>component.types.includes(type))?.long_name).find(Boolean);
+      return res.json({ok:true,area:area || ''});
+    }
     if (action === 'crmLoad' || action === 'crmSave') {
       if (!canSee('sales')) return res.status(403).json({error:'Sales access is required.'});
       const {RETINA_SCRIPT_URL:url, RETINA_SHARED_SECRET:secret}=process.env;

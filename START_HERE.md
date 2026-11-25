@@ -45,3 +45,7 @@ Open **Departments** to choose Manufacturing Operations or switch to Sales & Dis
 Add a **Department** column to the existing **Users** sheet. Set your own active user’s **Role** to **Admin** for access to all seven departments. For team members, enter the exact department name shown in the chooser. A blank or unrecognized assignment grants no department access. Non-admin production writes require the **Store** role and **Manufacturing Operations** assignment. Purchase has read-only production inventory access.
 
 Catalogue cards give priority to bundled thumbnails matched by housing number. Other records still use their configured image links and show a category icon if a photo is missing or inaccessible. After-sales Service is under Sales & Distribution and R&D is under Manufacturing Operations in the department directory.
+
+### Sales CRM site capture
+
+Set `RETINA_GEOCODING_KEY` in the Vercel environment to a server-side Google Maps Platform key with the Geocoding API enabled, then redeploy. The CRM uses browser location permission to preview a map pin and request a locality. If location or lookup is unavailable, the sales rep can enter the area manually. The CRM records the timestamp on the server when a new lead is saved and displays it in IST. **Enquiries** lists leads marked **Inbound enquiry**, including those entered via **Add enquiry**.

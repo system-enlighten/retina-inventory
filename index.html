@@ -480,6 +480,35 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 .crm-history li{border-bottom:1px solid #d6dcd7;padding:9px 0}
 .crm-history p{margin:5px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:760px){.crm-workspace,.crm-form-grid{grid-template-columns:1fr}}
+
+.crm-effect-fields{grid-template-columns:repeat(auto-fit,minmax(155px,1fr))}
+.crm-colours{margin:16px 0 14px;padding:0;border:0;min-inline-size:0}
+.crm-colours legend{font-weight:700;margin-bottom:8px}
+.crm-colour-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,195px),1fr));gap:10px}
+.crm-colour-card{display:flex;flex-direction:column;padding:12px;border:1px solid #aab8b5;background:var(--paper)}
+.crm-colour-card:has(:checked){border-color:var(--ink);box-shadow:inset 0 3px var(--ink)}
+.crm-colour-card h3{font-family:Georgia,serif;font-size:1.3rem;margin:0 0 8px}
+.crm-colour-card p{font-size:.85rem;line-height:1.45;margin:8px 0 10px}
+.crm-swatch{height:24px;border:1px solid #aab8b5}
+.crm-swatch.basic{background:linear-gradient(90deg,#fff0c9,#ff9c42)}
+.crm-swatch.sun{background:linear-gradient(90deg,#ffc786,#fff7e6,#e1efff)}
+.crm-swatch.static{background:linear-gradient(90deg,#ffdfaa 25%,#fff1d6 25% 50%,#f6f7ef 50% 75%,#e2f0ff 75%)}
+.crm-swatch.rgbw{background:linear-gradient(90deg,#d94845 25%,#49a962 25% 50%,#4f77cc 50% 75%,#fff 75%)}
+.crm-colour-options{display:grid;gap:5px;margin-top:auto}
+.crm-colour-options label{display:flex;align-items:center;gap:8px;margin:0;font-size:.83rem;cursor:pointer}
+.crm-colour-options input[type=radio]{flex:none;width:auto;margin:0;accent-color:var(--ink)}
+.crm-tariff-price{display:flex;flex-wrap:wrap;align-items:end;gap:10px}
+.crm-tariff-price label{margin:0}
+#crm-tariff-form{margin:0}
+#crm-tariff-form [data-tariff-status]{margin-bottom:0}
+#crm-tariff-form [hidden]{display:none}
+
+.crm-capture-location{margin:0 0 16px;padding:12px;border:1px solid #aab8b5;background:#edf1eb}
+.crm-capture-location .row{gap:8px;flex-wrap:wrap}
+.crm-capture-location p{margin:8px 0;font-size:.86rem}
+.crm-location-preview iframe{width:100%;height:150px;border:1px solid #aab8b5;display:block;margin:7px 0}
+.crm-capture-details{margin:12px 0}
+.crm-capture-details summary{cursor:pointer;font-weight:700;margin-bottom:10px}
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
@@ -2798,7 +2827,7 @@ function mountRegister(root) {
     async openPos(lead) {
       if (!loaded) await loadProduction();
       if (!find(quoteProjects(),lead.id)) {
-        await productionRequest("salesProjectCreate",{estimate:{id:lead.id,name:lead.name,address:lead.address}});
+        await productionRequest("salesProjectCreate",{estimate:{id:lead.id,name:lead.name,address:[lead.houseNumber,lead.address || lead.area].filter(Boolean).join(", ").slice(0,500)}});
         await loadProduction();
       }
       quoteProject=lead.id;
