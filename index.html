@@ -460,6 +460,26 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 .housing-card-spec .spec-secondary{color:var(--muted);font-weight:500}
 .housing-card-spec .spec-dimensions>span,.housing-card-spec .spec-angles>strong{white-space:nowrap}
 .catalogue-view{margin:10px 0}.catalogue-view [aria-pressed="true"]{background:var(--ink);color:var(--white)}
+
+.crm-actions{gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.crm-actions label{flex:1;min-width:135px}
+.crm-workspace{display:grid;grid-template-columns:minmax(225px,1fr) minmax(0,3fr);gap:14px;align-items:start;margin-top:14px}
+.crm-detail{display:grid;gap:14px;min-width:0}
+.crm-lead{width:100%;text-align:left;padding:11px 10px;background:transparent;color:var(--ink);border:0;border-bottom:1px solid #d6dcd7;cursor:pointer}
+.crm-lead small,.crm-history small{display:block;color:#465d68;margin-top:5px}
+.crm-lead[aria-pressed=true]{background:#e4ece9;box-shadow:inset 3px 0 var(--rust)}
+.crm-timeline{display:flex;flex-wrap:wrap;gap:6px 9px;padding:0;list-style:none}
+.crm-timeline li{padding:6px 9px;border:1px solid #c9d2cf}
+.crm-timeline li.visited{background:#e5ece8}
+.crm-timeline li[aria-current]{color:white;background:var(--ink);font-weight:bold}
+.crm-details,.crm-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.crm-details{margin-top:20px}
+.crm-details dt{font-weight:700;font-size:.8rem}
+.crm-details dd{margin:4px 0 0;overflow-wrap:anywhere;white-space:pre-wrap}
+.crm-history{list-style:none;margin:0;padding:0}
+.crm-history li{border-bottom:1px solid #d6dcd7;padding:9px 0}
+.crm-history p{margin:5px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:760px){.crm-workspace,.crm-form-grid{grid-template-columns:1fr}}
 </style>
 <link rel="stylesheet" href="/production/product-guide.css">
 <script defer src="/production/product-guide.js"></script>
@@ -491,6 +511,7 @@ svg.symbol, svg.dish-icon, .symbol, .dish-icon {
 </div>
 <script src="/production/catalogue-data.js"></script>
 <script src="/production/estimate-format.js"></script>
+<script src="/production/sales-crm.js"></script>
 <script>
 function mountRegister(root) {
   const document = root.ownerDocument;
@@ -786,11 +807,11 @@ function mountRegister(root) {
     return productionLoad;
   }
 
-  const pages = ["Production", "Inventory", "Database", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS", "Teams & Tasks", "Production Sheets", "Supplier Aliases", "Supplier Master", "Production Purchases"];
+  const pages = ["Production", "Inventory", "Database", "Catalogue", "Nomenclature", "Dispatch Register", "Settings", "Workbenches", "Estimates", "Invoices", "Sales Analysis", "Sales POS", "Teams & Tasks", "Production Sheets", "Supplier Aliases", "Supplier Master", "Production Purchases", "CRM"];
   const departments = [
     {id:"manufacturing", name:"Manufacturing Operations", scope:"Workshop, inventory, BOMs and R&D", pages:[0,13,1,2,3,5,6,12]},
     {id:"marketing", name:"Marketing", scope:"Campaigns and brand materials", pages:[3]},
-    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[11,8,9,10,3,5]},
+    {id:"sales", name:"Sales & Distribution", scope:"Billing, distribution and after-sales service", pages:[11,17,8,9,10,3,5]},
     {id:"purchase", name:"Purchase & Supply Chain", scope:"Suppliers, purchasing and receiving", pages:[1,14,15,16]},
     {id:"accounts", name:"Accounts", scope:"Ledger, payments and reporting", pages:[]},
     {id:"legal", name:"Patent & Legal Team", scope:"Patents, IP and contracts", pages:[]},
@@ -2124,8 +2145,12 @@ function mountRegister(root) {
       screen.innerHTML = supplierMasterPage();
       return;
     }
+    if (department.id === "sales" && page === 17) {
+      screen.innerHTML = crm.view();
+      return;
+    }
     const requiresRegister = page !== 3 && page !== 4;
-    screen.innerHTML = department.id === "manufacturing" || (department.id === "sales" && [8,9,11].includes(page)) ? "" : heading("", department.name, department.scope);
+    screen.innerHTML = department.id === "manufacturing" || (department.id === "sales" && [8,9,11,17].includes(page)) ? "" : heading("", department.name, department.scope);
     if (!loaded && requiresRegister) {
       screen.insertAdjacentHTML("beforeend", productionLoad
         ? loadingMessage("Loading production register…")
@@ -2203,6 +2228,52 @@ function mountRegister(root) {
     });
   }
 
+  function electricalRange(raw, unit) {
+    const value = String(raw ?? "").trim().toUpperCase().replace(/[–—]/g,"-").replace(/\s+/g,"");
+    const match = value.match(/^(\d+(?:\.\d+)?)(MA|A|V|W)?(?:-(\d+(?:\.\d+)?)(MA|A|V|W)?)?$/);
+    if (!match) return null;
+    const [,first,firstUnit,last,lastUnit] = match;
+    const fromUnit = firstUnit || lastUnit || unit, toUnit = lastUnit || fromUnit;
+    const convert = (amount,from) => from === unit ? Number(amount) : unit === "MA" && from === "A" ? Number(amount)*1000 : NaN;
+    const min = convert(first,fromUnit), max = convert(last || first,toUnit);
+    if (!(min > 0 && max >= min)) return null;
+    return {min,max,ranged:last !== undefined};
+  }
+
+  function ledElectricalRequirements(spec,article) {
+    if (!spec?.[0]) return {issue:"Select an LED first."};
+    const mode = (/^\d+$/.test(article || "") && Number(article) > 0 && Number(article) <= 100) ||
+      /\b(?:strip|linear flex)\b/i.test(spec[0]) ? "CV" : "CC";
+    const voltage = electricalRange(spec[4],"V"), current = electricalRange(spec[3],"MA"), power = electricalRange(spec[2],"W");
+    if (!voltage || (spec[3]?.trim() && !current) || (mode === "CC" && (!current || current.ranged)) ||
+        (mode === "CV" && (voltage.ranged || (!power && !current))))
+      return {issue:"The LED needs verified voltage and " + (mode === "CC" ? "a single operating current" : "current or wattage") + " before drivers can be matched."};
+    const minCurrent = current?.min ?? power.min / voltage.max * 1000;
+    const maxCurrent = current?.max ?? power.max / voltage.min * 1000;
+    return {mode,voltage,minCurrent,maxCurrent,
+      minPower:Math.min(power?.min ?? Infinity,voltage.min*minCurrent/1000),
+      maxPower:Math.max(power?.max ?? 0,voltage.max*maxCurrent/1000)};
+  }
+
+  function compatibleDrivers(led,heatSink,driverDatabase) {
+    const limit = electricalRange(String(heatSink || "").trim().replace(/^(?:UP\s*TO|MAX(?:IMUM)?\.?)\s*/i,""),"W");
+    if (led.issue) return {rows:[],issue:led.issue};
+    if (!limit || limit.ranged) return {rows:[],issue:"The housing needs a verified maximum heat-sink wattage before drivers can be matched."};
+    const rows = Object.entries(driverDatabase).filter(([,records]) => {
+      if (records.length !== 1) return false;
+      const [,type,rawVoltage,rawCurrent,rawLoad] = records[0];
+      const voltage = electricalRange(rawVoltage,"V"), load = electricalRange(rawLoad,"W");
+      const current = electricalRange(rawCurrent,"MA");
+      if (String(type).trim().toUpperCase() !== led.mode || !voltage || !load || load.max >= limit.max ||
+          led.maxPower > load.max + 1e-8 || (load.ranged && led.minPower < load.min - 1e-8)) return false;
+      if (led.mode === "CC") return !!current && led.minCurrent >= current.min && led.maxCurrent <= current.max &&
+        led.voltage.min >= voltage.min && led.voltage.max <= voltage.max;
+      if (voltage.ranged || voltage.min !== led.voltage.min || (String(rawCurrent || "").trim() && !current)) return false;
+      return led.maxCurrent <= (current?.max ?? load.max / voltage.min * 1000) + 1e-8;
+    });
+    return {rows,issue:rows.length ? "" : "No driver meets the LED requirements and the housing heat-sink limit."};
+  }
+
   function technicalDatasheetData(item,housing,configuration) {
     const variant = housing.variants[configuration.variant] || [];
     const led = housingData.led[configuration.led]?.[0] || [];
@@ -2253,6 +2324,7 @@ function mountRegister(root) {
     const serial = item.id.slice(8);
     const basic = Number(serial) < 200 || Number(serial) > 400;
     const bracket = housingData.adapterBrackets?.[serial] || "";
+    const heatSink = housingData.heatSinks?.[serial] || "";
     const bracketMatches = basic ? bracketLedMatches(bracket,housingData.ledBracketSource || []) : [];
     const finished = housing.finished && !housing.options.length;
     const candidates = finished ? [[item.code, "", "", ""]] : housing.options;
@@ -2273,6 +2345,7 @@ function mountRegister(root) {
     modal("Configure " + item.name, `
       <p><b>${esc(item.code)}</b> · ${esc(housing.spec.join(" · ") || item.spec)}</p>
       ${basic && !finished ? `<p>Adapter bracket · ${esc(bracket || "Not specified")}</p>` : ""}
+      ${!finished ? `<p>Maximum heat-sink load · ${esc(heatSink || "Not recorded")}</p>` : ""}
       ${variantTable}<div id="housing-led"></div><div id="housing-driver"></div>
       <div id="housing-selection" aria-live="polite"></div>
       ${inventoryView && canWrite && !db.ingredients.some(row => item.aliases.includes(String(row.id).trim().toUpperCase()))
@@ -2293,27 +2366,29 @@ function mountRegister(root) {
       const ledRows = basic ? bracketMatches.map(([row,id,spec]) =>
         ["LED row " + row,[[...spec,id || "Missing"]]]) :
         componentRows("led",[...new Set(byVariant.map(row => row[2]))].filter(Boolean));
-      const drivers = linkedArticle && ledId ? [...new Set(byVariant.filter(row => row[2] === ledId).map(row => row[3]))].filter(Boolean) : [];
+      const selectedLedSpec = basic ? selectedBracketLed?.[2] : housingData.led[ledId]?.length === 1 ? housingData.led[ledId][0] : null;
+      const requirements = ledElectricalRequirements(selectedLedSpec,ledId);
+      const compatibility = compatibleDrivers(requirements,heatSink,housingData.drivers);
+      const drivers = compatibility.rows.map(([id]) => id);
+      if (!drivers.includes(driver)) driver = null;
       if (!finished) {
         if (change !== "housing-led" && change !== "housing-driver" && change !== "housing-config-code")
           ledSlot.innerHTML = configurationTable("housing-led","LED",
             ["Product code","Size (mm)","Power","Current","Voltage","CCT","CRI",...(basic ? ["LED article"] : [])],ledRows,led);
         if (change !== "housing-driver" && change !== "housing-config-code")
           driverSlot.innerHTML = led ? configurationTable("housing-driver","Driver",
-            ["Product code","CV / CC","Voltage","Current","Load","Control","IP","Make"],componentRows("drivers",drivers),driver) : "";
+            ["Product code","CV / CC","Voltage","Current","Load","Control","IP","Make"],compatibility.rows,driver) : "";
         if (!led || !driver) {
           resultSlot.textContent = !ledRows.length ? (basic && !bracket ? "This housing has no adapter bracket recorded." : "No matching LEDs were found.") :
-            !led ? "Select a matching LED to see drivers." : !linkedArticle ?
-              "This LED matches the adapter bracket. A valid LED article link is required before Retina can show its recorded drivers." :
-              !drivers.length ? "No driver combination is recorded for this LED and variant." : "Select a matching driver to review the configuration.";
+            !led ? "Select a matching LED to see drivers." : compatibility.issue || "Select a matching driver to review the configuration.";
           return;
         }
       }
-      const matches = byVariant.filter(row => row[2] === (finished ? "" : ledId) && row[3] === (finished ? "" : driver));
+      const matches = linkedArticle || finished ? byVariant.filter(row => row[2] === (finished ? "" : ledId) && row[3] === (finished ? "" : driver)) : [];
       const chosen = (change === "housing-config-code"
         ? matches.find(row => row[0] === form.elements["housing-config-code"]?.value) : null) || matches[0];
       if (!chosen) {
-        resultSlot.innerHTML = empty("No LED and driver combination is recorded for this variant.");
+        resultSlot.innerHTML = empty("This driver matches the recorded electrical limits. Register the LED and driver combination before using it in an order.");
         return;
       }
       const [code, v, selectedLed, selectedDriver] = chosen;
@@ -2328,6 +2403,8 @@ function mountRegister(root) {
         <p>${registered ? "Approved parts per finished unit" : finished ? "Purchased finished unit. Review its stock SKU and any separately stocked accessories." : "Imported combinations are candidates. Confirm fit, electrical ratings, dimming and load before approving the stock parts."}</p>
         ${registeredParts.length ? `<ul>${registeredParts.map(([sku,qty]) => `<li>${esc(sku)} · ${esc(qty)} ${esc(find(db.ingredients,sku)?.unit)}</li>`).join("")}</ul>` : ""}
         ${unresolved ? empty("Resolve missing or ambiguous article references in the source sheet before approving this configuration.") : ""}
+        ${!finished && requirements.mode === "CC" && electricalRange(housingData.drivers[driver]?.[0]?.[3],"MA")?.ranged
+          ? empty("Verify the driver setting at " + requirements.maxCurrent + " mA before assembly.") : ""}
         <h3>Accessories</h3>
         ${accessories.length ? grid(["SKU","Description"], accessories.map(([sku,name]) =>
           `<tr><th scope="row">${esc(sku)}</th><td>${esc(name)}</td></tr>`).join("")) : empty("No accessories are recorded for this housing.")}
@@ -2484,7 +2561,11 @@ function mountRegister(root) {
     const accessoryFields = accessories.length ? '<fieldset><legend>Optional accessories</legend>' +
       accessories.map((product,index) => `<label><input type="checkbox" name="accessory" value="${index}">
         ${esc(product.code)} · ${esc(product.name)} · ${money(product.price)} per housing</label>`).join("") + '</fieldset>' : "";
-    modal("Add " + item.name,`<p>${esc(item.code)}</p>` + amount("quantity","Quantity",1) +
+    const effectOptions = crm.selections(projectId);
+    const effectField = effectOptions.length ? `<label>Use the CRM lighting selection for this product
+      <select data-crm-quote-effect><option value="">Enter quantity and price below</option>
+      ${effectOptions.map((line,index)=>`<option value="${index}" data-count="${line.count}" data-cents="${line.cents ?? ""}">${esc(crm.selectionText(line.options))}</option>`).join("")}</select></label>` : "";
+    modal("Add " + item.name,`<p>${esc(item.code)}</p>` + effectField + amount("quantity","Quantity",1) +
       billingPrice(0,item.price > 0 ? item.price : "") + input("circuit","Circuit number","","text","maxlength='100'") + accessoryFields,
       form => {
         const draft = quoteDrafts.get(projectId) || {id:crypto.randomUUID(),lines:[]};
@@ -2710,7 +2791,22 @@ function mountRegister(root) {
   }
 
   // Actions Dispatcher
+  const crm = window.createRetinaCrm({
+    esc,btn,panel,empty,grid,stats,heading,input,modal,request:productionRequest,render,
+    dialog:()=>$("dialog"),
+    linkedEstimates:lead=>(db.estimates || []).filter(estimate=>estimate.source?.localProjectId===lead.id).map(estimate=>estimate.ref),
+    async openPos(lead) {
+      if (!loaded) await loadProduction();
+      if (!find(quoteProjects(),lead.id)) {
+        await productionRequest("salesProjectCreate",{estimate:{id:lead.id,name:lead.name,address:lead.address}});
+        await loadProduction();
+      }
+      quoteProject=lead.id;
+      actions.page("11");
+    }
+  });
   const actions = {
+    ...crm.actions,
     "supplier-master-unlock": () => {
       if (directoryOpen || department?.id !== "purchase" || page !== 15) return;
       const version = ++supplierUnlockVersion;
@@ -3715,6 +3811,16 @@ function mountRegister(root) {
   root.addEventListener("error", event => {
     if (event.target.matches?.(".playcard-image img")) event.target.hidden = true;
   }, {capture:true, signal:controller.signal});
+
+  listen(root,"submit",crm.submit);
+  listen(root,"input",crm.previewRate);
+  listen(root,"change",event=>{
+    if (!event.target.matches("[data-crm-quote-effect]") || event.target.value==="") return;
+    const {count,cents}=event.target.selectedOptions[0].dataset;
+    event.target.form.elements.quantity.value=count;
+    event.target.form.elements.price0.value=cents ? String(Number(cents)/100) : "";
+  });
+
 
   listen(root, "click", async event => {
     const button = event.target.closest("[data-action]");

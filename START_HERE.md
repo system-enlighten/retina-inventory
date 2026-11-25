@@ -6,6 +6,10 @@ The production workspace writes to a separate **Retina Production Register** tab
 
 ## 1. Update the Apps Script backend
 
+For Sales CRM, also add a script file named `Crm` from `apps-script/Crm.gs` before deploying the new version. CRM records are stored in a worksheet called **Retina Sales CRM**, created on the first successful save. The web app exposes it to the Sales department.
+
+Open **Sales & Distribution → CRM**. Use Site Survey to locate captured sites, Pipeline to log calls and change stages, and Effect Pricing to set pre-tax tariffs. Open a lead in Sales POS to configure a catalogue product. When adding the product, select the relevant CRM effect to copy its quantity and quoted rate. Application-specific effects and configurations without a tariff require an entered price. Moving a lead to Closed Won adds it to Customers. Sales order release follows Retina’s existing estimate workflow.
+
 1. Open the existing Retina Apps Script project. Keep your current deployment and script properties.
 2. If your existing Code.gs matches the Retina package's backend, replace it with `apps-script/Code.gs`. If it has additional custom code, add the `productionLoad` and `productionSave` branch from the packaged `doPost` to yours, after the shared-secret check and before the existing actions. Keep your other project files.
 3. Create a script file named `Production` and paste `apps-script/Production.gs`. It uses the existing `getSpreadsheet_` and `reply_` integration.

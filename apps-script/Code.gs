@@ -41,6 +41,7 @@ function doPost(e) {
     }
 
     var action = String(input.action || '').trim();
+    if (action === 'crmLoad' || action === 'crmSave') return reply_(retinaCrm_(input));
     if (['productionLoad', 'productionSave', 'estimateSave', 'estimateIssue', 'estimatePayment', 'estimateEdit', 'invoiceEdit', 'invoicePayment', 'salesProjectCreate'].indexOf(action) !== -1) {
       return reply_(productionRegister_(input));
     } else if (action === 'saveProduct') {

@@ -29,7 +29,8 @@ function setCookie(res,value,maxAge) {
   res.setHeader('Set-Cookie',`${cookieName}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`);
 }
 const housingAdapterBrackets = Object.fromEntries(housingDatabase.rows.map(row => [row[0],row[18]]));
-const housingConfiguration = {...housingData,adapterBrackets:housingAdapterBrackets,ledBracketSource};
+const housingHeatSinks = Object.fromEntries(housingDatabase.rows.map(row => [row[0],row[14]]));
+const housingConfiguration = {...housingData,adapterBrackets:housingAdapterBrackets,heatSinks:housingHeatSinks,ledBracketSource};
 const housingPurchaseFields = new Map(housingDatabase.rows.map(row => [row[0], [row[16], row[22]]]));
 const purchaseHousingAliases = {
   headers: [housingDatabase.headers[16], housingDatabase.headers[22], ...housingSupplierAliases.headers],
@@ -110,6 +111,19 @@ export default async function handler(req,res) {
       const [headers = [], ...data] = result.data.values || [];
       if (headers.length !== 8) return res.status(502).json({error:'Supplier Master headers could not be read.'});
       return res.json({ok:true,headers,rows:data.filter(row => row.some(value => String(value ?? '').trim()))});
+    }
+    if (action === 'crmLoad' || action === 'crmSave') {
+      if (!canSee('sales')) return res.status(403).json({error:'Sales access is required.'});
+      const {RETINA_SCRIPT_URL:url, RETINA_SHARED_SECRET:secret}=process.env;
+      if (!url || !secret) return res.status(503).json({error:'Apps Script is not configured.'});
+      const {revision,change}=req.body;
+      if (action === 'crmSave' && (!Number.isSafeInteger(revision) || revision < 0 || !change ||
+          typeof change !== 'object' || Array.isArray(change) || JSON.stringify(change).length > 10000))
+        return res.status(400).json({error:'Invalid CRM update.'});
+      const upstream=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({action,secret,email,revision,change}),signal:AbortSignal.timeout(18000)});
+      const result=await upstream.json();
+      return res.status(result.ok ? 200 : result.conflict ? 409 : 400).json(result);
     }
     const estimateWrite = ['estimateSave','estimateIssue','estimatePayment','estimateEdit','invoiceEdit','invoicePayment','salesProjectCreate'].includes(action);
     if(action==='productionLoad' || action==='productionSave' || estimateWrite) {
