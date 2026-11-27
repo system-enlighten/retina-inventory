@@ -70,19 +70,15 @@ window.createRetinaCrm = function ({esc, btn, panel, empty, grid, stats, heading
   let tariffSaved = false;
   function leadDetail(lead) {
     const visited = new Set(lead.history.filter(item=>item.type==='Stage changed').map(item=>item.previous || item.note.split(' → ')[0]));
-    const stagesHtml = [...stages.slice(0,-2),lead.stage==='Closed Lost'?'Closed Lost':'Closed Won'].map(stage=>{
-      const current=stage===lead.stage;
-      const label=!lead.closedAt&&stage==='Closed Won'?'Close':stage;
-      return `<li ${current?'aria-current="step"':visited.has(stage)?'class="visited"':''}><span class="crm-path-marker" aria-hidden="true"></span><span>${esc(label)}</span></li>`;
-    }).join('');
+    const stagesHtml = stages.map(stage=>`<li ${stage===lead.stage?'aria-current="step"':visited.has(stage)?'class="visited"':''}>${esc(stage)}</li>`).join('');
     const person = data.accounts.find(account=>account.id===lead.accountId);
     const estimates = linkedEstimates(lead);
     const detailFields = [['Captured',lead.createdAt && captureTime(lead.createdAt)],['Area',lead.area],['House / plot no.',lead.houseNumber],['Address',lead.address],['Project type',lead.projectType],['Construction stage',lead.siteStage],['Contact',lead.contact],['Phone',lead.phone],['Owner',lead.owner],['Potential since',lead.potentialAt && localDate(lead.potentialAt)],['Source',lead.source],['Architect',person?.name],['Call / meeting outcome',lead.outcome],['Next follow-up',lead.due],['Estimate',lead.estimateReference],['Notes',lead.notes]];
     const overview = `<dl class="crm-details">${detailFields.filter(([,value])=>value).map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}${lead.latitude?`<div><dt>Site location</dt><dd>${location(lead)}</dd></div>`:''}</dl>`;
     const selections = lead.selection.map(item=>`<tr><td>${esc(selectionText(item.options))}</td><td>${item.count}</td><td>${item.cents===null?'Price on request':currency(item.cents)}</td><td>${item.cents===null?'—':currency(item.cents*item.count)}</td><td>${btn('Remove','crm-remove',item.id,'mini')}</td></tr>`).join('');
-    return `<div class="crm-detail">${panel('',esc(lead.name),`<div class="row crm-actions">${btn('Edit lead','crm-edit',lead.id)}${btn('Log activity','crm-log',lead.id,'primary')}${btn('Change stage','crm-stage',lead.id)}${btn('Open in Sales POS','crm-pos',lead.id)}</div><div class="crm-record-meta">${[lead.stage,lead.owner&&'Owner · '+lead.owner,lead.due&&'Follow-up · '+lead.due].filter(Boolean).map(value=>`<span>${esc(value)}</span>`).join('')}</div><h3>Sales stages</h3><ol class="crm-sales-path" aria-label="Sales stages">${stagesHtml}</ol><nav class="row crm-actions crm-record-links" aria-label="Lead sections"><a href="#crm-record-details">Lead details</a><a href="#crm-record-lighting">Lighting selection</a><a href="#crm-record-history">Activity timeline</a></nav><section id="crm-record-details"><h3>Lead details</h3>${overview}</section>${estimates.length?`<p>Linked estimates · ${estimates.map(value=>esc(value)).join(', ')}</p>`:''}`)}
-      <section id="crm-record-lighting">${panel('','Lighting selection',btn('+ Add light effect','crm-selection',lead.id) + (selections?grid(['Effect and options','Qty','Unit rate','Total',''],selections):empty('No lighting effects selected.')))}</section>
-      <section id="crm-record-history">${panel('','Activity timeline',`<ul class="crm-history">${lead.history.slice().reverse().map(item=>`<li><strong>${esc(item.type)}</strong><small>${captureTime(item.at)} · ${esc(item.by)}</small>${item.note?`<p>${esc(item.note)}</p>`:''}</li>`).join('')}</ul>`)}</section></div>`;
+    return `<div class="crm-detail">${panel('',esc(lead.name),`<div class="row crm-actions">${btn('Edit lead','crm-edit',lead.id)}${btn('Log activity','crm-log',lead.id,'primary')}${btn('Change stage','crm-stage',lead.id)}${btn('Open in Sales POS','crm-pos',lead.id)}</div><ol class="crm-timeline">${stagesHtml}</ol>${overview}${estimates.length?`<p>Linked estimates · ${estimates.map(value=>esc(value)).join(', ')}</p>`:''}`)}
+      ${panel('','Lighting selection',btn('+ Add light effect','crm-selection',lead.id) + (selections?grid(['Effect and options','Qty','Unit rate','Total',''],selections):empty('No lighting effects selected.')))}
+      ${panel('','Activity history',`<ul class="crm-history">${lead.history.slice().reverse().map(item=>`<li><strong>${esc(item.type)}</strong><small>${localDate(item.at)} · ${esc(item.by)}</small>${item.note?`<p>${esc(item.note)}</p>`:''}</li>`).join('')}</ul>`)}</div>`;
   }
   function pipeline() {
     const query=search.trim().toLowerCase();
@@ -94,10 +90,9 @@ window.createRetinaCrm = function ({esc, btn, panel, empty, grid, stats, heading
       ['Won this month',data.leads.filter(lead=>lead.stage==='Closed Won' && new Date(lead.closedAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Kolkata'}).slice(0,7)===today().slice(0,7)).length],
       ['Lost this month',data.leads.filter(lead=>lead.stage==='Closed Lost' && new Date(lead.closedAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Kolkata'}).slice(0,7)===today().slice(0,7)).length]
     ]);
+    const list=matching.slice().reverse().map(lead=>`<button type="button" data-action="crm-lead" data-id="${esc(lead.id)}" class="crm-lead" aria-pressed="${selected===lead.id}"><strong>${esc(lead.name)}</strong><small>${esc([lead.area,lead.stage].filter(Boolean).join(' · '))}</small>${lead.due?`<small>Follow-up ${esc(lead.due)}</small>`:''}</button>`).join('');
     const active=getLead(selected);
-    if(active)return `<div class="crm-record">${btn('Back to pipeline','crm-list')}${leadDetail(active)}</div>`;
-    const rows=matching.slice().reverse().map(lead=>`<tr><td>${btn(lead.name,'crm-open',lead.id,'mini')}</td><td>${esc(lead.stage)}</td><td>${esc(lead.contact||'—')}</td><td>${esc(lead.area||'—')}</td><td>${esc(lead.owner||'—')}</td><td>${esc(lead.due||'—')}</td></tr>`).join('');
-    return summary+panel('','Pipeline records',`<form id="crm-search" class="row crm-actions">${text('query','Find a record',search,'search')}<button class="btn" type="submit">Search</button></form>`+(rows?grid(['Project','Stage','Contact','Area','Owner','Next follow-up'],rows):empty('No matching leads.')));
+    return summary+`<div class="crm-workspace">${panel('','Leads',`<form id="crm-search" class="row crm-actions">${text('query','Search leads',search,'search')}<button class="btn" type="submit">Search</button></form>${list||empty('No leads found.')}`)}${active?leadDetail(active):empty('Select a lead to view its timeline.')}</div>`;
   }
   function view() {
     const header=heading('','Sales CRM','',`<div class="row crm-actions">${btn('Enquiries','crm-tab','Enquiries',tab==='Enquiries'?'primary':'')}${btn('+ Capture Lead','crm-new','','primary')}</div>`);
@@ -163,7 +158,7 @@ window.createRetinaCrm = function ({esc, btn, panel, empty, grid, stats, heading
         ${text('contact','Contact name',lead.contact)}
         ${text('phone','Phone',lead.phone,'tel')}
         ${text('owner','Sales owner',lead.owner)}
-        ${select('source','Lead source',['Site survey','Architect referral','Client referral','Inbound enquiry','Distributor / retailer','Other'],lead.source||(referral?'Architect referral':source))}
+        ${select('source','Lead source',['Site survey','Architect referral','Inbound enquiry','Distributor / retailer','Other'],lead.source||(referral?'Architect referral':source))}
         ${select('accountId','Architect account',data.accounts.map(account=>[account.id,account.name]),lead.accountId||referral,true)}
       </div>${notes('notes','Site notes',lead.notes)}</details>
       `,async form=>{
@@ -175,11 +170,11 @@ window.createRetinaCrm = function ({esc, btn, panel, empty, grid, stats, heading
     if(lead.latitude && lead.longitude) showLocation(dialog().querySelector('form'),'Saved site location.');
   }
   const actions={
-    'crm-tab':value=>{tab=value;tariffSaved=false;if(tab==='Pipeline')selected=undefined;render();},
+    'crm-tab':value=>{tab=value;tariffSaved=false;if(tab==='Pipeline'&&!selected)selected=data.leads.at(-1)?.id;render();},
     'crm-refresh':()=>load(),
     'crm-new-enquiry':()=>editLead({},'','Inbound enquiry'),
     'crm-new':()=>{if(data)editLead();},
-    'crm-list':()=>{selected=undefined;render();},
+    'crm-lead':id=>{selected=id;render();},
     'crm-open':id=>{selected=id;tab='Pipeline';search='';render();},
     'crm-edit':id=>editLead(getLead(id)),
     'crm-referral':id=>editLead({},id),

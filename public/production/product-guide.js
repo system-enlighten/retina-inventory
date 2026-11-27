@@ -2,42 +2,16 @@
   const pageCount = 66;
   const base = new URL(".", document.currentScript.src);
   const pageSrc = page => new URL(
-    `product_guide_assets/native/page_${String(page).padStart(2,"0")}.webp`, base
+    `product_guide_assets/original-pages/page_${String(page).padStart(2,"0")}.webp`, base
   ).href;
   const printUrl = page => new URL(`ProductGuidePrint.html?print=${page}`,base).href;
-  const fontFallbacks = {
-    "SamarkanNormal": "Georgia,serif",
-    "HiraKakuStdN-W8": '"Hiragino Sans W8","Arial Black",sans-serif',
-    "MyriadPro-Light": '"Myriad Pro Light","Avenir Next Ultra Light",sans-serif',
-    "MyriadPro-Regular": '"Myriad Pro","Avenir Next",sans-serif',
-    "MyriadPro-Semibold": '"Myriad Pro Semibold","Avenir Next Demi Bold",sans-serif',
-    "HelveticaNeue-Thin": '"Helvetica Neue Thin","Avenir Next Ultra Light",sans-serif',
-    "HelveticaNeue-UltraLightItalic": '"Helvetica Neue UltraLight Italic","Avenir Next",sans-serif',
-    "HelveticaNeue-ThinItalic": '"Helvetica Neue Thin Italic","Avenir Next",sans-serif',
-    "HelveticaNeue-Medium": '"Helvetica Neue Medium","Helvetica Neue",Arial,sans-serif',
-    "HelveticaNeue-Bold": '"Helvetica Neue Bold","Arial Bold",sans-serif',
-    "HelveticaNeueLTCom-Lt": '"Helvetica Neue Light","Avenir Next Ultra Light",sans-serif',
-    "HelveticaNeueLTCom-Bd": '"Helvetica Neue Bold","Arial Bold",sans-serif',
-    "AvenirNext-DemiBold": '"Avenir Next Demi Bold","Arial Bold",sans-serif',
-    "AvenirNext-Bold": '"Avenir Next Bold","Arial Bold",sans-serif',
-    "Times-Roman": '"Times New Roman",serif'
-  };
   let indexRequest;
-
-  function installFonts(fonts) {
-    const style = document.createElement("style");
-    style.textContent = fonts.map((font, id) =>
-      `@font-face { font-family: GuideFace${id}; src: local(${JSON.stringify(font)}); }`
-    ).join("\n");
-    document.head.append(style);
-    return fonts.map((font, id) => `GuideFace${id},${fontFallbacks[font] || '"Helvetica Neue",Arial,sans-serif'}`);
-  }
 
   function loadIndex() {
     indexRequest ||= fetch(new URL("product-guide-index.json",base)).then(response => {
       if (!response.ok) throw Error("Cannot load the catalogue text.");
       return response.json();
-    }).then(data => ({...data, families: installFonts(data.fonts)})).catch(error => {
+    }).catch(error => {
       indexRequest = null;
       throw error;
     });
@@ -46,12 +20,12 @@
 
   const widthUnit = points => points / 6.12 + "cqw";
 
-  function documentPage(data, eager, families, goToPage) {
+  function documentPage(data, eager, goToPage) {
     const article = document.createElement("article");
     article.id = "guide-page-" + data.page;
     article.className = "guide-sheet";
     article.setAttribute("aria-label", `Page ${data.page}${data.title ? " · " + data.title : ""}`);
-    const image = new Image(1224, 2016);
+    const image = new Image(1836, 3024);
     image.className = "guide-artwork";
     image.alt = "";
     image.loading = eager ? "eager" : "lazy";
@@ -59,16 +33,12 @@
     image.src = pageSrc(data.page);
     article.append(image);
 
-    for (const [x, y, size, font, color, rotated, opacity, label, advances] of data.runs || []) {
+    for (const [x, y, size, , , rotated, , label, advances] of data.runs || []) {
       const line = document.createElement("div");
       line.className = "guide-line";
-      line.style.setProperty("--guide-baseline", `var(--guide-baseline-${font}, .8)`);
       line.style.left = widthUnit(x);
       line.style.top = widthUnit(y);
       line.style.fontSize = widthUnit(size);
-      line.style.fontFamily = families[font];
-      line.style.color = color;
-      line.style.opacity = opacity;
       if (rotated) line.classList.add("guide-rotated");
 
       const text = document.createElement("span");
@@ -101,20 +71,6 @@
       article.append(link);
     }
     return article;
-  }
-
-  function alignBaselines(reader, families) {
-    const probe = document.createElement("div");
-    probe.className = "guide-font-probe";
-    const marker = document.createElement("span");
-    probe.append("Hg", marker);
-    reader.append(probe);
-    families.forEach((family, id) => {
-      probe.style.fontFamily = family;
-      const ascent = marker.getBoundingClientRect().top - probe.getBoundingClientRect().top;
-      reader.style.setProperty(`--guide-baseline-${id}`, ascent / 1000);
-    });
-    probe.remove();
   }
 
   class RetinaProductGuide extends HTMLElement {
@@ -189,12 +145,10 @@
       const ready=loadIndex().then(data=>{
         const printPage=Math.min(pageCount,Math.max(1,Number(printMode)||1));
         const records=printMode&&printMode!=="book"?[data.pages[printPage-1]]:data.pages;
-        pages=records.map((page,i)=>documentPage(page,Boolean(printMode)||i<2,data.families,goToPage));
+        pages=records.map((page,i)=>documentPage(page,Boolean(printMode)||i<2,goToPage));
         reader.replaceChildren(...pages);
         for(const entry of data.contents)pageLink(contents,entry.page,`${entry.title} · ${entry.page}`);
         showCurrent(printMode&&printMode!=="book"?printPage:1);
-        alignBaselines(reader,data.families);
-        document.fonts?.ready.then(()=>alignBaselines(reader,data.families));
         if(!printMode){
           visible=new IntersectionObserver(entries=>{
             const first=entries.filter(entry=>entry.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top)[0];

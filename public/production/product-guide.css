@@ -28,20 +28,16 @@ retina-product-guide {
 .guide-artwork { display:block;width:100%;height:auto;user-select:none;pointer-events:none; }
 .guide-line {
   position:absolute;white-space:pre;line-height:1;transform-origin:0 0;
-  font-variant-ligatures:none;font-kerning:none;
+  font-variant-ligatures:none;font-kerning:none;color:transparent;user-select:text;--guide-baseline:.8;
 }
 .guide-rotated { transform:rotate(-90deg); }
 .guide-run {
   position:absolute;top:calc(-1em * var(--guide-baseline));height:1em;
 }
 .guide-run > span { position:absolute;top:0; }
+.guide-line ::selection { background:#4e92c560;color:transparent; }
 .guide-page-link { position:absolute; }
 .guide-page-link:focus-visible { outline:2px solid #245eab; }
-.guide-font-probe {
-  position:absolute;visibility:hidden;font-size:1000px;line-height:1;
-  left:0;top:0;width:0;height:1em;white-space:nowrap;overflow:hidden;
-}
-.guide-font-probe span { display:inline-block;width:0;height:0;vertical-align:baseline; }
 .guide-standalone { margin:12px;background:#fbf8ee; }
 @media print {
   body.guide-standalone,.guide-standalone .guide-workspace,.guide-standalone .guide-reader { margin:0;padding:0;max-width:none;background:#fff; }
